@@ -1,0 +1,5 @@
+- {{[[TODO]]}} 看看^^高亮^^
+    - ![](https://firebasestorage.googleapis.com/v0/b/firescript-577a2.appspot.com/o/imgs%2Fapp%2FMannixHu%2F-A2vVAcbRa.png?alt=media&token=cc2f57ad-b304-4ed0-997b-364c0186300a)
+- [[适度难度]]
+    - > 任务难度比当前能力高一点时最易触发心流
+    - ![](https://mannix-imgurl.oss-cn-beijing.aliyuncs.com/iPicRoam/2022-12-10-110428.jpg)

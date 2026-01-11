@@ -1,0 +1,110 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+/* Base */
+body {
+  background: #fefbf2;
+  min-height: 100vh;
+  font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* Card */
+.card {
+  background: #fff;
+  border: 1px solid #e5e2d9;
+  border-radius: 8px;
+}
+
+/* Smooth Transitions */
+* {
+  transition-timing-function: ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Antd Override */
+.ant-drawer .ant-drawer-content {
+  background: #fefbf2;
+}
+
+.ant-modal .ant-modal-content {
+  background: #fff;
+  border: 1px solid #e5e2d9;
+}
+
+/* Upload Dragger */
+.ant-upload-drag {
+  background: #fff !important;
+  border: 2px dashed #d4d1c7 !important;
+  border-radius: 8px !important;
+  transition: all 0.2s ease-out !important;
+}
+
+.ant-upload-drag:hover {
+  border-color: #1a1a1a !important;
+  background: #fafaf8 !important;
+}
+
+.ant-upload-drag .ant-upload {
+  padding: 20px !important;
+}
+
+/* Rule Card */
+.rule-card {
+  transition: all 0.15s ease-out;
+  cursor: pointer;
+}
+
+.rule-card:hover {
+  border-color: #1a1a1a;
+}
+
+/* Code Style */
+code {
+  font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* Button Override */
+.ant-btn-primary {
+  background: #1a1a1a !important;
+  border-color: #1a1a1a !important;
+}
+
+.ant-btn-primary:hover {
+  background: #333 !important;
+  border-color: #333 !important;
+}
+
+/* Switch Override */
+.ant-switch.ant-switch-checked {
+  background: #1a1a1a !important;
+}
+
+/* Tag Override */
+.ant-tag-blue {
+  background: #f0f0ed !important;
+  border-color: #d4d1c7 !important;
+  color: #1a1a1a !important;
+}
+
+/* Override GitHub markdown styles for our theme */
+.markdown-body {
+  background: transparent !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+  font-size: 14px !important;
+}
+
+.markdown-body code {
+  background: #f5f5f0 !important;
+  border-color: #e5e2d9 !important;
+}
+
+.markdown-body pre {
+  background: #f5f5f0 !important;
+  border-color: #e5e2d9 !important;
+}

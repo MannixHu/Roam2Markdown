@@ -1,0 +1,343 @@
+// Transform rule definition
+export interface TransformRule {
+  id: string
+  name: string
+  description: string
+  enabled: boolean
+  transform: (content: string) => string
+}
+
+/**
+ * Parse Roam table and convert to Markdown table
+ * Roam table is row-based: each top-level item is a row, children are columns
+ * @param tableBlock Table content block
+ * @param indent Indent string (to maintain hierarchy)
+ */
+function convertRoamTable(tableBlock: string, indent: string = ''): string {
+  const lines = tableBlock.split('\n')
+  const rows: string[][] = []
+  let currentRow: string[] = []
+  let maxCols = 0
+  let baseIndent = -1
+
+  for (const line of lines) {
+    // Skip {{[[table]]}} marker line
+    if (line.includes('{{[[table]]}}')) continue
+
+    // Match list item: capture indent and content
+    const match = line.match(/^(\s*)[-*]\s+(.*)$/)
+    if (!match) continue
+
+    const lineIndent = match[1].length
+    const content = match[2].trim()
+
+    // Skip empty content
+    if (!content) continue
+
+    // Set base indent (first valid line's indent)
+    if (baseIndent < 0) {
+      baseIndent = lineIndent
+    }
+
+    // Calculate relative indent level
+    const relativeIndent = lineIndent - baseIndent
+    const colIndex = relativeIndent <= 0 ? 0 : Math.floor(relativeIndent / 4) || Math.floor(relativeIndent / 2)
+
+    if (colIndex === 0) {
+      // New row starts
+      if (currentRow.length > 0) {
+        rows.push(currentRow)
+        maxCols = Math.max(maxCols, currentRow.length)
+      }
+      currentRow = [content]
+    } else {
+      // Next column in same row
+      while (currentRow.length < colIndex) {
+        currentRow.push('')
+      }
+      currentRow[colIndex] = content
+    }
+  }
+
+  // Add last row
+  if (currentRow.length > 0) {
+    rows.push(currentRow)
+    maxCols = Math.max(maxCols, currentRow.length)
+  }
+
+  if (rows.length === 0 || maxCols === 0) {
+    return tableBlock
+  }
+
+  // Pad each row to max columns
+  rows.forEach(row => {
+    while (row.length < maxCols) {
+      row.push('')
+    }
+  })
+
+  // Generate Markdown table (with indent)
+  const mdLines: string[] = []
+  mdLines.push(indent + '| ' + rows[0].join(' | ') + ' |')
+  mdLines.push(indent + '| ' + rows[0].map(() => '---').join(' | ') + ' |')
+  for (let i = 1; i < rows.length; i++) {
+    mdLines.push(indent + '| ' + rows[i].join(' | ') + ' |')
+  }
+
+  return mdLines.join('\n')
+}
+
+/**
+ * Parse Roam kanban and convert to Markdown table
+ * Roam kanban is column-based: each top-level item is a column header, children are column content
+ * @param kanbanBlock Kanban content block
+ * @param indent Indent string (to maintain hierarchy)
+ */
+function convertRoamKanban(kanbanBlock: string, indent: string = ''): string {
+  const lines = kanbanBlock.split('\n')
+  const columns: { header: string; items: string[] }[] = []
+  let currentColumn: { header: string; items: string[] } | null = null
+  let baseIndent = -1
+
+  for (const line of lines) {
+    // Skip {{[[kanban]]}} marker line
+    if (line.includes('{{[[kanban]]}}')) continue
+
+    // Match list item
+    const match = line.match(/^(\s*)[-*]\s+(.*)$/)
+    if (!match) continue
+
+    const lineIndent = match[1].length
+    const content = match[2].trim()
+
+    // Set base indent
+    if (baseIndent < 0 && content) {
+      baseIndent = lineIndent
+    }
+
+    if (baseIndent < 0) continue
+
+    const relativeIndent = lineIndent - baseIndent
+
+    if (relativeIndent <= 0 && content) {
+      // New column header
+      if (currentColumn) {
+        columns.push(currentColumn)
+      }
+      currentColumn = { header: content, items: [] }
+    } else if (relativeIndent > 0 && currentColumn) {
+      // Column content (skip empty items)
+      if (content) {
+        currentColumn.items.push(content)
+      }
+    }
+  }
+
+  // Add last column
+  if (currentColumn) {
+    columns.push(currentColumn)
+  }
+
+  if (columns.length === 0) {
+    return kanbanBlock
+  }
+
+  // Find max rows
+  const maxRows = Math.max(...columns.map(c => c.items.length), 1)
+
+  // Generate Markdown table (with indent)
+  const mdLines: string[] = []
+
+  // Header
+  mdLines.push(indent + '| ' + columns.map(c => c.header).join(' | ') + ' |')
+  mdLines.push(indent + '| ' + columns.map(() => '---').join(' | ') + ' |')
+
+  // Data rows
+  for (let i = 0; i < maxRows; i++) {
+    const row = columns.map(c => c.items[i] || '')
+    mdLines.push(indent + '| ' + row.join(' | ') + ' |')
+  }
+
+  return mdLines.join('\n')
+}
+
+// Built-in rules
+export const builtInRules: TransformRule[] = [
+  {
+    id: 'todo',
+    name: 'TODO Conversion',
+    description: '{{[[TODO]]}} → [ ]',
+    enabled: true,
+    transform: (content) => content.replace(/\{\{\[\[TODO\]\]\}\}/g, '[ ]'),
+  },
+  {
+    id: 'done',
+    name: 'DONE Conversion',
+    description: '{{[[DONE]]}} → [x]',
+    enabled: true,
+    transform: (content) => content.replace(/\{\{\[\[DONE\]\]\}\}/g, '[x]'),
+  },
+  {
+    id: 'highlight',
+    name: 'Highlight Conversion',
+    description: '^^text^^ → **text** (bold)',
+    enabled: true,
+    transform: (content) => content.replace(/\^\^(.+?)\^\^/g, '**$1**'),
+  },
+  {
+    id: 'link-flatten',
+    name: 'Link Path Flatten',
+    description: '[[folder/note]] → [[folder_note]]',
+    enabled: true,
+    transform: (content) => content.replace(/\[\[([^\]\/]+?)\/([^\]]+?)\]\]/g, '[[$1_$2]]'),
+  },
+  {
+    id: 'frontmatter-clean',
+    name: 'Clean YAML Frontmatter',
+    description: 'Remove extra title frontmatter',
+    enabled: true,
+    transform: (content) => content.replace(/^-\s*---\n\s*title:.*\n\s*---\n-/gm, '-'),
+  },
+  {
+    id: 'table',
+    name: 'Table Conversion',
+    description: '{{[[table]]}} → Markdown table',
+    enabled: true,
+    transform: (content) => {
+      // Handle Windows line endings
+      const lines = content.split('\n').map(l => l.replace(/\r$/, ''))
+      const result: string[] = []
+      let i = 0
+
+      while (i < lines.length) {
+        const line = lines[i]
+        // Check if table starts (supports - {{[[table]]}} or just {{[[table]]}})
+        // Capture: leading spaces, list marker (- ), table marker
+        const tableMatch = line.match(/^(\s*)(-\s*)?\{\{\[\[table\]\]\}\}\s*$/)
+
+        if (tableMatch) {
+          const leadingSpaces = tableMatch[1] || ''
+          const listMarker = tableMatch[2] || '' // Capture "- " if exists
+          const baseIndent = leadingSpaces.length
+          const tableLines: string[] = [line]
+          i++
+
+          // Collect table content (deeper indented lines)
+          while (i < lines.length) {
+            const nextLine = lines[i]
+            // Continue collecting empty lines
+            if (nextLine.trim() === '') {
+              tableLines.push(nextLine)
+              i++
+              continue
+            }
+            // Check indent
+            const nextIndentMatch = nextLine.match(/^(\s*)/)
+            const nextIndent = nextIndentMatch ? nextIndentMatch[1].length : 0
+            // If shallower or equal indent with new list item/special marker, table ends
+            if (nextIndent <= baseIndent && (nextLine.trim().startsWith('-') || nextLine.trim().startsWith('{'))) {
+              break
+            }
+            tableLines.push(nextLine)
+            i++
+          }
+
+          // Calculate table indent: leading spaces + list marker length
+          const tableIndent = listMarker ? leadingSpaces + '  ' : leadingSpaces
+
+          // Convert table, maintain original indent level
+          const converted = convertRoamTable(tableLines.join('\n'), tableIndent)
+
+          // If originally a list item, add list marker
+          if (listMarker) {
+            const tableRows = converted.split('\n')
+            // First line with list marker, subsequent lines maintain indent
+            result.push(leadingSpaces + listMarker + tableRows[0].trimStart())
+            for (let j = 1; j < tableRows.length; j++) {
+              result.push(tableRows[j])
+            }
+          } else {
+            result.push(converted)
+          }
+        } else {
+          result.push(line)
+          i++
+        }
+      }
+
+      return result.join('\n')
+    },
+  },
+  {
+    id: 'kanban',
+    name: 'Kanban Conversion',
+    description: '{{[[kanban]]}} → Markdown table',
+    enabled: true,
+    transform: (content) => {
+      // Handle Windows line endings
+      const lines = content.split('\n').map(l => l.replace(/\r$/, ''))
+      const result: string[] = []
+      let i = 0
+
+      while (i < lines.length) {
+        const line = lines[i]
+        // Check if kanban starts
+        // Capture: leading spaces, list marker (- ), kanban marker
+        const kanbanMatch = line.match(/^(\s*)(-\s*)?\{\{\[\[kanban\]\]\}\}\s*$/)
+
+        if (kanbanMatch) {
+          const leadingSpaces = kanbanMatch[1] || ''
+          const listMarker = kanbanMatch[2] || '' // Capture "- " if exists
+          const baseIndent = leadingSpaces.length
+          const kanbanLines: string[] = [line]
+          i++
+
+          while (i < lines.length) {
+            const nextLine = lines[i]
+            if (nextLine.trim() === '') {
+              kanbanLines.push(nextLine)
+              i++
+              continue
+            }
+            const nextIndentMatch = nextLine.match(/^(\s*)/)
+            const nextIndent = nextIndentMatch ? nextIndentMatch[1].length : 0
+            if (nextIndent <= baseIndent && (nextLine.trim().startsWith('-') || nextLine.trim().startsWith('{'))) {
+              break
+            }
+            kanbanLines.push(nextLine)
+            i++
+          }
+
+          // Calculate table indent
+          const tableIndent = listMarker ? leadingSpaces + '  ' : leadingSpaces
+
+          // Convert kanban, maintain original indent level
+          const converted = convertRoamKanban(kanbanLines.join('\n'), tableIndent)
+
+          // If originally a list item, add list marker
+          if (listMarker) {
+            const tableRows = converted.split('\n')
+            result.push(leadingSpaces + listMarker + tableRows[0].trimStart())
+            for (let j = 1; j < tableRows.length; j++) {
+              result.push(tableRows[j])
+            }
+          } else {
+            result.push(converted)
+          }
+        } else {
+          result.push(line)
+          i++
+        }
+      }
+
+      return result.join('\n')
+    },
+  },
+]
+
+// Apply all enabled rules
+export function applyRules(content: string, rules: TransformRule[]): string {
+  return rules
+    .filter((r) => r.enabled)
+    .reduce((text, rule) => rule.transform(text), content)
+}
