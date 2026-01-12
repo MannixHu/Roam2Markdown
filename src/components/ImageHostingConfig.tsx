@@ -87,7 +87,7 @@ export default function ImageHostingConfig({ config, onChange }: ImageHostingCon
 
             <Form.Item
               label="Storage Path"
-              className="mb-0"
+              className="mb-3"
               extra="Optional, e.g. images/ or blog/assets/"
             >
               <Input
@@ -95,6 +95,23 @@ export default function ImageHostingConfig({ config, onChange }: ImageHostingCon
                 value={config.storagePath}
                 onChange={(e) => handleFieldChange('storagePath', e.target.value)}
               />
+            </Form.Item>
+
+            <Form.Item
+              className="mb-0"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm text-neutral-700">Migrate Attachments</div>
+                  <div className="text-xs text-neutral-400">
+                    Also migrate PDF, DOC, audio, video files
+                  </div>
+                </div>
+                <Switch
+                  checked={config.migrateAttachments ?? false}
+                  onChange={(checked) => onChange({ ...config, migrateAttachments: checked })}
+                />
+              </div>
             </Form.Item>
           </Form>
 

@@ -1,11 +1,11 @@
 import { OSSConfig, MigrationProgress, MigrationSession, FileMigrationState, ImageMigrationState } from './types'
-import { extractImagesToMigrate } from './detector'
+import { extractImagesToMigrate, extractAttachmentsToMigrate } from './detector'
 import { createOSSClient, generateFileName, uploadToOSS, validateOSSConfig } from './ossClient'
 import { downloadImageWithCache, clearImageCache } from './downloader'
 import { saveMigrationSession, getLatestPendingSession, deleteMigrationSession } from '../storage'
 
 /**
- * 单个图片迁移结果
+ * Single image migration result
  */
 export interface ImageMigrationResult {
   originalUrl: string
@@ -15,7 +15,7 @@ export interface ImageMigrationResult {
 }
 
 /**
- * 文件迁移结果
+ * File migration result
  */
 export interface FileMigrationResult {
   originalContent: string
@@ -25,12 +25,12 @@ export interface FileMigrationResult {
 }
 
 /**
- * 迁移进度回调
+ * Migration progress callback
  */
 export type ProgressCallback = (progress: MigrationProgress) => void
 
 /**
- * 迁移控制器（用于暂停/继续）
+ * Migration controller (for pause/resume)
  */
 export interface MigrationController {
   pause: () => void
@@ -41,7 +41,7 @@ export interface MigrationController {
 }
 
 /**
- * 创建迁移控制器
+ * Create migration controller
  */
 export function createMigrationController(): MigrationController {
   let paused = false
@@ -57,7 +57,7 @@ export function createMigrationController(): MigrationController {
 }
 
 /**
- * 等待恢复（如果暂停）
+ * Wait if paused
  */
 async function waitIfPaused(controller: MigrationController): Promise<boolean> {
   while (controller.isPaused() && !controller.isStopped()) {
@@ -67,21 +67,21 @@ async function waitIfPaused(controller: MigrationController): Promise<boolean> {
 }
 
 /**
- * 替换内容中的图片 URL
+ * Replace image URL in content
  */
 function replaceImageUrl(
   content: string,
   originalUrl: string,
   newUrl: string
 ): string {
-  // 转义特殊字符用于正则匹配
+  // Escape special characters for regex matching
   const escapedUrl = originalUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-  // 替换 markdown 格式: ![alt](url)
+  // Replace markdown format: ![alt](url)
   const mdRegex = new RegExp(`(!\\[[^\\]]*\\])\\(${escapedUrl}(\\s*"[^"]*")?\\)`, 'g')
   content = content.replace(mdRegex, `$1(${newUrl}$2)`)
 
-  // 替换 HTML 格式: <img src="url">
+  // Replace HTML format: <img src="url">
   const htmlRegex = new RegExp(`(<img[^>]+src=["'])${escapedUrl}(["'][^>]*>)`, 'gi')
   content = content.replace(htmlRegex, `$1${newUrl}$2`)
 
@@ -89,17 +89,60 @@ function replaceImageUrl(
 }
 
 /**
- * 生成会话 ID
+ * Replace attachment with markdown link
+ * Handles:
+ * - Roam format: {{[[pdf]]: url}} → [pdf](newUrl)
+ * - Standalone URL: https://...file.pdf → [pdf](newUrl)
+ * - List item URL: - https://...file.pdf → - [pdf](newUrl)
+ */
+function replaceAttachment(
+  content: string,
+  originalMatch: string,
+  newUrl: string,
+  attachmentType: string
+): string {
+  // Use attachment type as link text (e.g., "pdf", "docx")
+  const linkText = attachmentType.toLowerCase()
+
+  // Check if originalMatch is a Roam format or standalone URL
+  const isRoamFormat = originalMatch.startsWith('{{')
+
+  // Escape special characters for regex matching
+  const escapedMatch = originalMatch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const regex = new RegExp(escapedMatch, 'g')
+
+  if (isRoamFormat) {
+    // Roam format: replace with markdown link
+    return content.replace(regex, `[${linkText}](${newUrl})`)
+  } else {
+    // Standalone URL: check if it has list marker prefix
+    const hasListMarker = originalMatch.trimStart().startsWith('-')
+    if (hasListMarker) {
+      // Preserve list marker
+      const leadingWhitespace = originalMatch.match(/^(\s*)/)?.[1] || ''
+      return content.replace(regex, `${leadingWhitespace}- [${linkText}](${newUrl})`)
+    } else {
+      // Just the URL
+      return content.replace(regex, `[${linkText}](${newUrl})`)
+    }
+  }
+}
+
+/**
+ * Generate session ID
  */
 function generateSessionId(): string {
   return `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }
 
 /**
- * 创建新的迁移会话
+ * Create new migration session
+ * @param files Files to process
+ * @param includeAttachments Whether to include attachments (pdf, audio, etc.)
  */
 export function createMigrationSession(
-  files: Array<{ path: string; content: string }>
+  files: Array<{ path: string; content: string }>,
+  includeAttachments: boolean = false
 ): MigrationSession {
   const now = Date.now()
   let totalImages = 0
@@ -108,11 +151,26 @@ export function createMigrationSession(
 
   for (const file of files) {
     const images = extractImagesToMigrate(file.content, 'aliyuncs.com')
-    totalImages += images.length
-
     const imagesState: Record<string, ImageMigrationState> = {}
+
+    // Add images
     for (const img of images) {
       imagesState[img.url] = { status: 'pending' }
+    }
+    totalImages += images.length
+
+    // Add attachments if enabled
+    if (includeAttachments) {
+      const attachments = extractAttachmentsToMigrate(file.content, 'aliyuncs.com')
+      for (const att of attachments) {
+        imagesState[att.url] = {
+          status: 'pending',
+          isAttachment: true,
+          attachmentType: att.type,
+          originalMatch: att.originalMatch,
+        }
+      }
+      totalImages += attachments.length
     }
 
     filesState[file.path] = {
@@ -138,7 +196,7 @@ export function createMigrationSession(
 }
 
 /**
- * 从会话中获取迁移结果
+ * Get migration results from session
  */
 export function getResultsFromSession(session: MigrationSession): Map<string, FileMigrationResult> {
   const results = new Map<string, FileMigrationResult>()
@@ -167,15 +225,16 @@ export function getResultsFromSession(session: MigrationSession): Map<string, Fi
 }
 
 /**
- * 执行迁移会话（支持断点续传）
+ * Execute migration session (with breakpoint resumption and concurrent uploads)
  */
 export async function executeMigrationSession(
   session: MigrationSession,
   config: OSSConfig,
   controller: MigrationController,
-  onProgress?: (session: MigrationSession) => void
+  onProgress?: (session: MigrationSession) => void,
+  concurrency: number = 5 // Number of concurrent uploads
 ): Promise<MigrationSession> {
-  // 验证配置
+  // Validate config
   const validation = validateOSSConfig(config)
   if (!validation.valid) {
     session.status = 'failed'
@@ -183,59 +242,87 @@ export async function executeMigrationSession(
     return session
   }
 
-  // 创建 OSS 客户端
+  // Create OSS client
   const client = createOSSClient(config)
 
   session.status = 'running'
 
-  // 遍历所有文件
-  for (const [, fileState] of Object.entries(session.files)) {
-    // 跳过已完成的文件
-    if (fileState.status === 'completed') continue
+  // Collect all pending images across all files
+  const pendingTasks: Array<{
+    fileState: FileMigrationState
+    originalUrl: string
+    imgState: ImageMigrationState
+  }> = []
 
+  for (const [, fileState] of Object.entries(session.files)) {
+    if (fileState.status === 'completed') continue
     fileState.status = 'processing'
 
-    // 遍历文件中的所有图片
     for (const [originalUrl, imgState] of Object.entries(fileState.images)) {
-      // 检查是否停止
-      if (controller.isStopped()) {
-        session.status = 'paused'
-        session.updatedAt = Date.now()
-        await saveMigrationSession(session)
-        return session
+      if (imgState.status !== 'uploaded') {
+        pendingTasks.push({ fileState, originalUrl, imgState })
       }
+    }
+  }
 
-      // 检查是否暂停，等待恢复
-      const stopped = await waitIfPaused(controller)
-      if (stopped) {
-        session.status = 'paused'
-        session.updatedAt = Date.now()
-        await saveMigrationSession(session)
-        return session
-      }
+  // Process images in concurrent batches
+  let i = 0
+  while (i < pendingTasks.length) {
+    // Check if stopped
+    if (controller.isStopped()) {
+      session.status = 'paused'
+      session.updatedAt = Date.now()
+      await saveMigrationSession(session)
+      return session
+    }
 
-      // 跳过已上传的图片
-      if (imgState.status === 'uploaded') continue
+    // Check if paused
+    const stopped = await waitIfPaused(controller)
+    if (stopped) {
+      session.status = 'paused'
+      session.updatedAt = Date.now()
+      await saveMigrationSession(session)
+      return session
+    }
+
+    // Get current batch
+    const batch = pendingTasks.slice(i, i + concurrency)
+
+    // Process batch concurrently
+    await Promise.all(batch.map(async ({ fileState, originalUrl, imgState }) => {
+      // Skip if already uploaded (in case of resume)
+      if (imgState.status === 'uploaded') return
 
       try {
-        // 下载图片
+        // Download image/attachment
         const blob = await downloadImageWithCache(originalUrl)
         imgState.status = 'downloaded'
 
-        // 生成文件名
+        // Generate filename
         const fileName = generateFileName(originalUrl, config.storagePath, blob.type)
 
-        // 上传到 OSS
+        // Upload to OSS
         const newUrl = await uploadToOSS(client, fileName, blob)
         imgState.status = 'uploaded'
         imgState.newUrl = newUrl
 
-        // 替换内容中的 URL
-        fileState.migratedContent = replaceImageUrl(
-          fileState.migratedContent,
-          originalUrl,
-          newUrl
-        )
+        // Replace URL in content
+        if (imgState.isAttachment && imgState.originalMatch) {
+          // Attachment: replace entire Roam format with markdown link
+          fileState.migratedContent = replaceAttachment(
+            fileState.migratedContent,
+            imgState.originalMatch,
+            newUrl,
+            imgState.attachmentType || 'file'
+          )
+        } else {
+          // Image: replace URL only
+          fileState.migratedContent = replaceImageUrl(
+            fileState.migratedContent,
+            originalUrl,
+            newUrl
+          )
+        }
 
         session.processedImages++
       } catch (error) {
@@ -243,16 +330,20 @@ export async function executeMigrationSession(
         imgState.status = 'failed'
         imgState.error = err.message
         session.failedImages++
-        console.warn(`图片迁移失败: ${originalUrl}`, err.message)
+        console.warn(`${imgState.isAttachment ? 'Attachment' : 'Image'} migration failed: ${originalUrl}`, err.message)
       }
+    }))
 
-      // 更新会话时间戳并保存
-      session.updatedAt = Date.now()
-      await saveMigrationSession(session)
-      onProgress?.(session)
-    }
+    // Update session after each batch
+    session.updatedAt = Date.now()
+    await saveMigrationSession(session)
+    onProgress?.(session)
 
-    // 检查文件是否完成
+    i += concurrency
+  }
+
+  // Check file completion status
+  for (const fileState of Object.values(session.files)) {
     const allDone = Object.values(fileState.images).every(
       img => img.status === 'uploaded' || img.status === 'failed'
     )
@@ -264,7 +355,7 @@ export async function executeMigrationSession(
     }
   }
 
-  // 检查整体是否完成
+  // Check overall completion
   const allFilesComplete = Object.values(session.files).every(
     f => f.status === 'completed' || f.status === 'failed'
   )
@@ -276,7 +367,7 @@ export async function executeMigrationSession(
 }
 
 /**
- * 开始新的迁移（始终创建新会话）
+ * Start new migration (always create new session)
  */
 export async function startMigration(
   files: Array<{ path: string; content: string }>,
@@ -284,34 +375,34 @@ export async function startMigration(
   controller: MigrationController,
   onProgress?: (session: MigrationSession) => void
 ): Promise<MigrationSession> {
-  // 清除下载缓存
+  // Clear download cache
   clearImageCache()
 
-  // 清除之前未完成的会话（如果有）
+  // Clear previous pending session if any
   const pendingSession = await getLatestPendingSession()
   if (pendingSession) {
     await deleteMigrationSession(pendingSession.id)
-    console.log(`清除旧会话: ${pendingSession.id}`)
+    console.log(`Cleared old session: ${pendingSession.id}`)
   }
 
-  // 创建新会话
-  const session = createMigrationSession(files)
+  // Create new session (include attachments if enabled)
+  const session = createMigrationSession(files, config.migrateAttachments ?? false)
   await saveMigrationSession(session)
-  console.log(`创建新迁移会话: ${session.id}, 图片数: ${session.totalImages}`)
+  console.log(`Created new migration session: ${session.id}, items: ${session.totalImages}`)
 
-  // 如果没有图片需要迁移，直接返回完成状态
+  // If no images to migrate, return completed status
   if (session.totalImages === 0) {
     session.status = 'completed'
     await saveMigrationSession(session)
     return session
   }
 
-  // 执行迁移
+  // Execute migration
   return executeMigrationSession(session, config, controller, onProgress)
 }
 
 /**
- * 恢复未完成的迁移会话
+ * Resume pending migration session
  */
 export async function resumeMigration(
   config: OSSConfig,
@@ -323,14 +414,14 @@ export async function resumeMigration(
     return null
   }
 
-  console.log(`恢复迁移会话: ${pendingSession.id}`)
+  console.log(`Resuming migration session: ${pendingSession.id}`)
   clearImageCache()
 
   return executeMigrationSession(pendingSession, config, controller, onProgress)
 }
 
 /**
- * 重试失败的图片
+ * Retry failed images
  */
 export async function retryFailedImages(
   session: MigrationSession,
@@ -338,7 +429,7 @@ export async function retryFailedImages(
   controller: MigrationController,
   onProgress?: (session: MigrationSession) => void
 ): Promise<MigrationSession> {
-  // 重置失败的图片状态
+  // Reset failed image status
   for (const fileState of Object.values(session.files)) {
     for (const imgState of Object.values(fileState.images)) {
       if (imgState.status === 'failed') {
@@ -356,32 +447,32 @@ export async function retryFailedImages(
   session.updatedAt = Date.now()
   await saveMigrationSession(session)
 
-  // 继续执行
+  // Continue execution
   return executeMigrationSession(session, config, controller, onProgress)
 }
 
 /**
- * 取消迁移会话
+ * Cancel migration session
  */
 export async function cancelMigration(sessionId: string): Promise<void> {
   await deleteMigrationSession(sessionId)
   clearImageCache()
 }
 
-// ============ 保留原有简单接口用于单文件处理 ============
+// ============ Legacy simple interface for single file processing ============
 
 /**
- * 迁移单个文件的图片（简单版本，无断点续传）
- * @param content 文件内容
- * @param config OSS 配置
- * @param onProgress 进度回调
+ * Migrate images in a single file (simple version, no breakpoint resumption)
+ * @param content File content
+ * @param config OSS config
+ * @param onProgress Progress callback
  */
 export async function migrateFileImages(
   content: string,
   config: OSSConfig,
   onProgress?: ProgressCallback
 ): Promise<FileMigrationResult> {
-  // 验证配置
+  // Validate config
   const validation = validateOSSConfig(config)
   if (!validation.valid) {
     return {
@@ -392,7 +483,7 @@ export async function migrateFileImages(
     }
   }
 
-  // 提取需要迁移的图片
+  // Extract images to migrate
   const imagesToMigrate = extractImagesToMigrate(content, 'aliyuncs.com')
 
   if (imagesToMigrate.length === 0) {
@@ -404,7 +495,7 @@ export async function migrateFileImages(
     }
   }
 
-  // 创建 OSS 客户端
+  // Create OSS client
   const client = createOSSClient(config)
 
   let migratedContent = content
@@ -417,43 +508,48 @@ export async function migrateFileImages(
     failed: 0,
   }
 
-  // 逐个处理图片（顺序处理，不并行）
-  for (const image of imagesToMigrate) {
-    try {
-      // 下载图片
-      const blob = await downloadImageWithCache(image.url)
-      progress.downloaded++
-      onProgress?.(progress)
+  // Process images concurrently (batch of 5)
+  const concurrency = 5
+  for (let i = 0; i < imagesToMigrate.length; i += concurrency) {
+    const batch = imagesToMigrate.slice(i, i + concurrency)
 
-      // 生成文件名（传入 MIME 类型以保留原始格式）
-      const fileName = generateFileName(image.url, config.storagePath, blob.type)
+    await Promise.all(batch.map(async (image) => {
+      try {
+        // Download image
+        const blob = await downloadImageWithCache(image.url)
+        progress.downloaded++
+        onProgress?.(progress)
 
-      // 上传到 OSS
-      const newUrl = await uploadToOSS(client, fileName, blob)
-      progress.uploaded++
-      onProgress?.(progress)
+        // Generate filename (pass MIME type to preserve original format)
+        const fileName = generateFileName(image.url, config.storagePath, blob.type)
 
-      // 替换内容中的 URL
-      migratedContent = replaceImageUrl(migratedContent, image.url, newUrl)
+        // Upload to OSS
+        const newUrl = await uploadToOSS(client, fileName, blob)
+        progress.uploaded++
+        onProgress?.(progress)
 
-      results.push({
-        originalUrl: image.url,
-        newUrl,
-        success: true,
-      })
-    } catch (error) {
-      const err = error as Error
-      progress.failed++
-      onProgress?.(progress)
+        // Replace URL in content
+        migratedContent = replaceImageUrl(migratedContent, image.url, newUrl)
 
-      // 失败时保留原始链接，不替换
-      results.push({
-        originalUrl: image.url,
-        success: false,
-        error: err.message,
-      })
-      console.warn(`图片迁移失败: ${image.url}`, err.message)
-    }
+        results.push({
+          originalUrl: image.url,
+          newUrl,
+          success: true,
+        })
+      } catch (error) {
+        const err = error as Error
+        progress.failed++
+        onProgress?.(progress)
+
+        // Keep original link on failure
+        results.push({
+          originalUrl: image.url,
+          success: false,
+          error: err.message,
+        })
+        console.warn(`Image migration failed: ${image.url}`, err.message)
+      }
+    }))
   }
 
   return {
@@ -465,8 +561,8 @@ export async function migrateFileImages(
 }
 
 /**
- * 批量迁移多个文件（简单版本，无断点续传）
- * 逐个文件处理，以兼容网络不稳定场景
+ * Batch migrate multiple files (simple version, no breakpoint resumption)
+ * Process files one by one for network stability
  */
 export async function migrateMultipleFiles(
   files: Array<{ path: string; content: string }>,
@@ -476,7 +572,7 @@ export async function migrateMultipleFiles(
 ): Promise<Map<string, FileMigrationResult>> {
   const results = new Map<string, FileMigrationResult>()
 
-  // 清除缓存，开始新的批量处理
+  // Clear cache for new batch processing
   clearImageCache()
 
   for (const file of files) {

@@ -1,15 +1,15 @@
-// 类型导出
+// Type exports
 export * from './types'
 
-// 检测器
-export { detectImageLinks, extractImagesToMigrate, isRemoteImage, isFromImageHost } from './detector'
+// Detector
+export { detectImageLinks, extractImagesToMigrate, isRemoteImage, isFromImageHost, detectAttachmentLinks, extractAttachmentsToMigrate } from './detector'
 
-// OSS 客户端
+// OSS client
 export { createOSSClient, validateOSSConfig, uploadToOSS, generateFileName, generateCDNUrl } from './ossClient'
 
-// 下载器
+// Downloader
 export { downloadImage, downloadImageWithCache, clearImageCache } from './downloader'
 
-// 迁移流程
+// Migration pipeline
 export { migrateFileImages, migrateMultipleFiles, startMigration, resumeMigration, retryFailedImages, cancelMigration, createMigrationController, getResultsFromSession } from './pipeline'
 export type { ImageMigrationResult, FileMigrationResult, ProgressCallback, MigrationController } from './pipeline'

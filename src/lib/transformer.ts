@@ -4,14 +4,14 @@ export interface FileItem {
   originalPath: string
   originalName: string
   newName: string
-  newPath: string // 新增：完整的新路径（包含文件夹）
-  isJournal: boolean // 新增：是否为日记文件
+  newPath: string // Full new path (with folder)
+  isJournal: boolean // Whether it's a journal file
   content: string
   transformedContent: string
   changes: string[]
 }
 
-// 月份名称映射
+// Month name mapping
 const MONTH_MAP: Record<string, string> = {
   'january': '01',
   'february': '02',
@@ -28,11 +28,11 @@ const MONTH_MAP: Record<string, string> = {
 }
 
 /**
- * 解析 Roam 日期格式文件名
- * 例如: "February 1st, 2023.md" → { year: 2023, month: 2, day: 1 }
+ * Parse Roam date format filename
+ * e.g. "February 1st, 2023.md" → { year: 2023, month: 2, day: 1 }
  */
 function parseRoamDateFileName(fileName: string): { year: number; month: number; day: number } | null {
-  // 匹配格式：Month Day(st/nd/rd/th), Year.md
+  // Match format: Month Day(st/nd/rd/th), Year.md
   const match = fileName.match(/^(\w+)\s+(\d{1,2})(?:st|nd|rd|th),?\s+(\d{4})\.md$/i)
   if (!match) return null
 
@@ -48,7 +48,7 @@ function parseRoamDateFileName(fileName: string): { year: number; month: number;
 }
 
 /**
- * 将 Roam 日期文件名转换为标准格式
+ * Convert Roam date filename to standard format
  * "February 1st, 2023.md" → "2023-02-01.md"
  */
 export function convertDateFileName(fileName: string): string | null {
@@ -63,21 +63,64 @@ export function convertDateFileName(fileName: string): string | null {
 }
 
 /**
- * 判断是否为日记文件（Roam 日期格式）
+ * Check if file is a journal (Roam date format)
  */
 export function isJournalFile(fileName: string): boolean {
   return parseRoamDateFileName(fileName) !== null
 }
 
-// 处理文件名：folder/note.md → folder_note.md
-export function flattenFileName(path: string): string {
-  // 去掉开头的 ./
-  const cleanPath = path.replace(/^\.\//, '')
-  // 将路径分隔符替换为下划线
-  return cleanPath.replace(/\//g, '_')
+/**
+ * Core sanitization logic for cross-platform compatibility and OSS upload
+ * Shared between filename and link content sanitization
+ */
+export function sanitizeContent(text: string): string {
+  return text
+    // Book title brackets first: << >> 《》 → single underscore each
+    .replace(/<<|>>/g, '_')
+    .replace(/《|》/g, '_')
+    // Windows forbidden: < > : " / \ | ? *
+    .replace(/[<>:"/\\|?*]/g, '_')
+    // Arrows and special symbols: → ← ↑ ↓ ➜ etc
+    .replace(/[→←↑↓↔↕➜➔➡⬅⬆⬇]/g, '-')
+    // Exclamation marks (can cause issues in some shells)
+    .replace(/!+/g, '')
+    // Multiple spaces → single space
+    .replace(/\s+/g, ' ')
+    // Trim leading/trailing spaces only
+    .replace(/^\s+|\s+$/g, '')
 }
 
-// 对比变更
+/**
+ * Sanitize filename for cross-platform compatibility and OSS upload
+ * Handles: Windows forbidden chars, URL-unsafe chars, special Unicode
+ */
+export function sanitizeFileName(fileName: string): string {
+  // Get extension
+  const extMatch = fileName.match(/\.[^.]+$/)
+  const ext = extMatch ? extMatch[0] : ''
+  const baseName = ext ? fileName.slice(0, -ext.length) : fileName
+
+  let sanitized = sanitizeContent(baseName)
+
+  // If filename became empty, use a default
+  if (!sanitized) {
+    sanitized = 'untitled'
+  }
+
+  return sanitized + ext
+}
+
+// Flatten path: folder/note.md → folder_note.md
+export function flattenFileName(path: string, shouldSanitize: boolean = true): string {
+  // Remove leading ./
+  const cleanPath = path.replace(/^\.\//, '')
+  // Replace path separators with underscore
+  const flattened = cleanPath.replace(/\//g, '_')
+  // Sanitize the result if enabled
+  return shouldSanitize ? sanitizeFileName(flattened) : flattened
+}
+
+// Compare changes
 export function diffChanges(original: string, transformed: string): string[] {
   const changes: string[] = []
   const originalLines = original.split('\n')
@@ -93,7 +136,7 @@ export function diffChanges(original: string, transformed: string): string[] {
   return changes
 }
 
-// 处理单个文件
+// Process single file
 export function processFile(
   path: string,
   content: string,
@@ -102,18 +145,22 @@ export function processFile(
   const transformedContent = applyRules(content, rules)
   const originalName = path.split('/').pop() || path
 
-  // 检查是否为日记文件并转换文件名
+  // Check if OSS compatibility (link-sanitize) rule is enabled
+  const shouldSanitize = rules.find(r => r.id === 'link-sanitize')?.enabled ?? true
+
+  // Check if journal file and convert filename
   const isJournal = isJournalFile(originalName)
   let newName: string
   let newPath: string
 
   if (isJournal) {
-    // 日记文件：转换日期格式，放入 journals 文件夹
-    newName = convertDateFileName(originalName) || originalName
+    // Journal file: convert date format, put in journals folder
+    const dateConverted = convertDateFileName(originalName)
+    newName = dateConverted || (shouldSanitize ? sanitizeFileName(originalName) : originalName)
     newPath = `journals/${newName}`
   } else {
-    // 非日记文件：保持原名（扁平化路径），放入 pages 文件夹
-    newName = flattenFileName(path)
+    // Non-journal file: flatten path, optionally sanitize, put in pages folder
+    newName = flattenFileName(path, shouldSanitize)
     newPath = `pages/${newName}`
   }
 

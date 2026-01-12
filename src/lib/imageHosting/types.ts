@@ -1,46 +1,54 @@
-// 阿里云 OSS 配置
+// Aliyun OSS configuration
 export interface OSSConfig {
   enabled: boolean
   accessKeyId: string
   accessKeySecret: string
   bucket: string
   region: string
-  storagePath?: string // 可选的存储路径前缀
+  storagePath?: string // Optional storage path prefix
+  migrateAttachments?: boolean // Also migrate attachments (pdf, audio, etc.)
 }
 
-// OSS 区域选项
+// OSS region options
 export const OSS_REGIONS = [
-  { label: '华东 1（杭州）', value: 'oss-cn-hangzhou' },
-  { label: '华东 2（上海）', value: 'oss-cn-shanghai' },
-  { label: '华北 1（青岛）', value: 'oss-cn-qingdao' },
-  { label: '华北 2（北京）', value: 'oss-cn-beijing' },
-  { label: '华北 3（张家口）', value: 'oss-cn-zhangjiakou' },
-  { label: '华南 1（深圳）', value: 'oss-cn-shenzhen' },
-  { label: '华南 2（河源）', value: 'oss-cn-heyuan' },
-  { label: '华南 3（广州）', value: 'oss-cn-guangzhou' },
-  { label: '西南 1（成都）', value: 'oss-cn-chengdu' },
-  { label: '中国（香港）', value: 'oss-cn-hongkong' },
-  { label: '美国西部 1（硅谷）', value: 'oss-us-west-1' },
-  { label: '美国东部 1（弗吉尼亚）', value: 'oss-us-east-1' },
-  { label: '亚太东南 1（新加坡）', value: 'oss-ap-southeast-1' },
-  { label: '亚太东南 2（悉尼）', value: 'oss-ap-southeast-2' },
-  { label: '亚太东南 3（吉隆坡）', value: 'oss-ap-southeast-3' },
-  { label: '亚太东南 5（雅加达）', value: 'oss-ap-southeast-5' },
-  { label: '亚太东北 1（东京）', value: 'oss-ap-northeast-1' },
-  { label: '亚太南部 1（孟买）', value: 'oss-ap-south-1' },
-  { label: '欧洲中部 1（法兰克福）', value: 'oss-eu-central-1' },
-  { label: '英国（伦敦）', value: 'oss-eu-west-1' },
-  { label: '中东东部 1（迪拜）', value: 'oss-me-east-1' },
+  { label: 'China East 1 (Hangzhou)', value: 'oss-cn-hangzhou' },
+  { label: 'China East 2 (Shanghai)', value: 'oss-cn-shanghai' },
+  { label: 'China North 1 (Qingdao)', value: 'oss-cn-qingdao' },
+  { label: 'China North 2 (Beijing)', value: 'oss-cn-beijing' },
+  { label: 'China North 3 (Zhangjiakou)', value: 'oss-cn-zhangjiakou' },
+  { label: 'China South 1 (Shenzhen)', value: 'oss-cn-shenzhen' },
+  { label: 'China South 2 (Heyuan)', value: 'oss-cn-heyuan' },
+  { label: 'China South 3 (Guangzhou)', value: 'oss-cn-guangzhou' },
+  { label: 'China Southwest 1 (Chengdu)', value: 'oss-cn-chengdu' },
+  { label: 'China (Hong Kong)', value: 'oss-cn-hongkong' },
+  { label: 'US West 1 (Silicon Valley)', value: 'oss-us-west-1' },
+  { label: 'US East 1 (Virginia)', value: 'oss-us-east-1' },
+  { label: 'Asia Pacific SE 1 (Singapore)', value: 'oss-ap-southeast-1' },
+  { label: 'Asia Pacific SE 2 (Sydney)', value: 'oss-ap-southeast-2' },
+  { label: 'Asia Pacific SE 3 (Kuala Lumpur)', value: 'oss-ap-southeast-3' },
+  { label: 'Asia Pacific SE 5 (Jakarta)', value: 'oss-ap-southeast-5' },
+  { label: 'Asia Pacific NE 1 (Tokyo)', value: 'oss-ap-northeast-1' },
+  { label: 'Asia Pacific South 1 (Mumbai)', value: 'oss-ap-south-1' },
+  { label: 'EU Central 1 (Frankfurt)', value: 'oss-eu-central-1' },
+  { label: 'UK (London)', value: 'oss-eu-west-1' },
+  { label: 'Middle East 1 (Dubai)', value: 'oss-me-east-1' },
 ]
 
-// 图片信息
+// Image info
 export interface ImageInfo {
   url: string
   altText?: string
   title?: string
 }
 
-// 迁移进度
+// Attachment info (pdf, audio, video, etc.)
+export interface AttachmentInfo {
+  url: string
+  type: string // pdf, audio, video, etc.
+  originalMatch: string // Original match string for replacement
+}
+
+// Migration progress
 export interface MigrationProgress {
   total: number
   downloaded: number
@@ -49,22 +57,26 @@ export interface MigrationProgress {
   currentFile?: string
 }
 
-// 单张图片的迁移状态
+// Single image/attachment migration state
 export interface ImageMigrationState {
   status: 'pending' | 'downloaded' | 'uploaded' | 'failed'
   newUrl?: string
   error?: string
+  // Attachment-specific fields
+  isAttachment?: boolean
+  attachmentType?: string // pdf, audio, video, etc.
+  originalMatch?: string // Original match string for replacement
 }
 
-// 单个文件的迁移状态
+// Single file migration state
 export interface FileMigrationState {
   status: 'pending' | 'processing' | 'completed' | 'failed'
   originalContent: string
   migratedContent: string
-  images: Record<string, ImageMigrationState> // key 是原始 URL
+  images: Record<string, ImageMigrationState> // key is original URL
 }
 
-// 迁移会话（用于断点续传）
+// Migration session (for breakpoint resumption)
 export interface MigrationSession {
   id: string
   startedAt: number
@@ -75,5 +87,5 @@ export interface MigrationSession {
   processedFiles: number
   processedImages: number
   failedImages: number
-  files: Record<string, FileMigrationState> // key 是文件路径
+  files: Record<string, FileMigrationState> // key is file path
 }

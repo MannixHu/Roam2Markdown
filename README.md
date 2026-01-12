@@ -13,10 +13,15 @@ A web-based tool for migrating Roam Research notes to standard Markdown format, 
 | `{{[[table]]}}` | Markdown table | Table conversion |
 | `{{[[kanban]]}}` | Markdown table | Kanban board |
 | `[[folder/note]]` | `[[folder_note]]` | Link path flatten |
+| `[[<<book>>]]` | `[[_book_]]` | OSS Upload Compatibility |
+| `[[January 11th, 2026]]` | `[[2026-01-11]]` | Date link conversion |
 
 ### File Organization
 - Journal files: `February 1st, 2023.md` → `journals/2023-02-01.md`
 - Other files → `pages/` folder
+- Filename sanitization (controlled by "OSS Upload Compatibility" rule)
+  - `<<高效能人士的七个习惯>>.md` → `_高效能人士的七个习惯_.md`
+  - Handles: `< > : " / \ | ? * ! → ← 《 》` → `_` or `-`
 - Auto-filters macOS metadata files (`__MACOSX`, `._*`)
 
 ### Image Hosting Migration
@@ -24,6 +29,13 @@ A web-based tool for migrating Roam Research notes to standard Markdown format, 
 - Breakpoint resumption support
 - Batch processing with progress tracking
 - Failed image retry
+
+### Attachment Migration (Optional)
+- Migrate PDF, DOC, audio, video and other files to OSS
+- Supported formats:
+  - `{{[[pdf]]: url}}` → `[filename.pdf](newUrl)`
+  - Standalone URLs: `https://...file.docx` → `[filename.docx](newUrl)`
+- Supports: pdf, doc, docx, xls, xlsx, ppt, pptx, md, txt, mp3, mp4, etc.
 
 ### Custom Rules
 - Add custom regex-based transformation rules

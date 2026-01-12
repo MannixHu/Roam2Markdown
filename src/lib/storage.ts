@@ -2,21 +2,21 @@ import { OSSConfig, MigrationSession } from './imageHosting/types'
 import { TransformRule } from './rules'
 
 const DB_NAME = 'roam-migration'
-const DB_VERSION = 2 // 升级版本以添加新 store
+const DB_VERSION = 2 // Upgraded version to add new store
 const CONFIG_STORE = 'config'
 const SESSION_STORE = 'migration-sessions'
 
-// 完整配置类型
+// Complete config type
 export interface AppConfig {
   ossConfig: OSSConfig
   customRules: TransformRule[]
-  disabledRuleIds: string[] // 被禁用的内置规则 ID
+  disabledRuleIds: string[] // IDs of disabled built-in rules
 }
 
 let dbInstance: IDBDatabase | null = null
 
 /**
- * 打开数据库连接
+ * Open database connection
  */
 function openDB(): Promise<IDBDatabase> {
   if (dbInstance) return Promise.resolve(dbInstance)
@@ -33,11 +33,11 @@ function openDB(): Promise<IDBDatabase> {
 
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result
-      // 配置存储
+      // Config store
       if (!db.objectStoreNames.contains(CONFIG_STORE)) {
         db.createObjectStore(CONFIG_STORE)
       }
-      // 迁移会话存储
+      // Migration session store
       if (!db.objectStoreNames.contains(SESSION_STORE)) {
         db.createObjectStore(SESSION_STORE, { keyPath: 'id' })
       }
@@ -46,7 +46,7 @@ function openDB(): Promise<IDBDatabase> {
 }
 
 /**
- * 保存完整配置
+ * Save complete config
  */
 export async function saveAppConfig(config: AppConfig): Promise<void> {
   const db = await openDB()
@@ -54,12 +54,12 @@ export async function saveAppConfig(config: AppConfig): Promise<void> {
     const transaction = db.transaction(CONFIG_STORE, 'readwrite')
     const store = transaction.objectStore(CONFIG_STORE)
 
-    // 保存时将函数转为字符串（自定义规则的 transform）
+    // Convert functions to strings when saving (custom rule transforms)
     const serializableConfig = {
       ...config,
       customRules: config.customRules.map(rule => ({
         ...rule,
-        // 保存原始的 pattern 和 replacement 用于恢复
+        // Save original pattern and replacement for restoration
         _pattern: rule.description.split(' → ')[0],
         _replacement: rule.description.split(' → ')[1] || '',
       }))
@@ -72,7 +72,7 @@ export async function saveAppConfig(config: AppConfig): Promise<void> {
 }
 
 /**
- * 加载完整配置
+ * Load complete config
  */
 export async function loadAppConfig(): Promise<AppConfig | null> {
   const db = await openDB()
@@ -89,7 +89,7 @@ export async function loadAppConfig(): Promise<AppConfig | null> {
         return
       }
 
-      // 恢复自定义规则的 transform 函数
+      // Restore custom rule transform functions
       const config: AppConfig = {
         ...saved,
         customRules: (saved.customRules || []).map((rule: any) => {
@@ -111,7 +111,7 @@ export async function loadAppConfig(): Promise<AppConfig | null> {
 }
 
 /**
- * 清除所有配置
+ * Clear all config
  */
 export async function clearConfig(): Promise<void> {
   const db = await openDB()
@@ -125,10 +125,10 @@ export async function clearConfig(): Promise<void> {
   })
 }
 
-// ==================== 迁移会话相关 ====================
+// ==================== Migration Session Related ====================
 
 /**
- * 保存迁移会话
+ * Save migration session
  */
 export async function saveMigrationSession(session: MigrationSession): Promise<void> {
   const db = await openDB()
@@ -143,7 +143,7 @@ export async function saveMigrationSession(session: MigrationSession): Promise<v
 }
 
 /**
- * 获取最近的未完成会话
+ * Get latest pending session
  */
 export async function getLatestPendingSession(): Promise<MigrationSession | null> {
   const db = await openDB()
@@ -155,7 +155,7 @@ export async function getLatestPendingSession(): Promise<MigrationSession | null
     request.onerror = () => reject(request.error)
     request.onsuccess = () => {
       const sessions = request.result as MigrationSession[]
-      // 找到最近的运行中或暂停的会话
+      // Find latest running or paused session
       const pending = sessions
         .filter(s => s.status === 'running' || s.status === 'paused')
         .sort((a, b) => b.updatedAt - a.updatedAt)[0]
@@ -165,7 +165,7 @@ export async function getLatestPendingSession(): Promise<MigrationSession | null
 }
 
 /**
- * 获取指定会话
+ * Get specific session
  */
 export async function getMigrationSession(id: string): Promise<MigrationSession | null> {
   const db = await openDB()
@@ -180,7 +180,7 @@ export async function getMigrationSession(id: string): Promise<MigrationSession 
 }
 
 /**
- * 删除迁移会话
+ * Delete migration session
  */
 export async function deleteMigrationSession(id: string): Promise<void> {
   const db = await openDB()
@@ -195,7 +195,7 @@ export async function deleteMigrationSession(id: string): Promise<void> {
 }
 
 /**
- * 清除所有已完成的迁移会话
+ * Clear all completed migration sessions
  */
 export async function clearCompletedSessions(): Promise<void> {
   const db = await openDB()

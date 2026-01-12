@@ -1,15 +1,15 @@
-import { ImageInfo } from './types'
+import { ImageInfo, AttachmentInfo } from './types'
 
 /**
- * 检测 markdown 中的图片链接
- * 支持两种格式:
- * 1. Markdown 语法: ![alt](url "title")
- * 2. HTML 语法: <img src="url" alt="alt" title="title">
+ * Detect image links in markdown
+ * Supports two formats:
+ * 1. Markdown syntax: ![alt](url "title")
+ * 2. HTML syntax: <img src="url" alt="alt" title="title">
  */
 export function detectImageLinks(content: string): ImageInfo[] {
   const images: ImageInfo[] = []
 
-  // 匹配 markdown 格式: ![alt](url "title")
+  // Match markdown format: ![alt](url "title")
   const markdownImageRegex = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]+)")?\)/g
   let match: RegExpExecArray | null
 
@@ -22,7 +22,7 @@ export function detectImageLinks(content: string): ImageInfo[] {
     })
   }
 
-  // 匹配 HTML 格式: <img src="url" alt="alt" title="title">
+  // Match HTML format: <img src="url" alt="alt" title="title">
   const htmlImageRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi
 
   while ((match = htmlImageRegex.exec(content)) !== null) {
@@ -44,17 +44,17 @@ export function detectImageLinks(content: string): ImageInfo[] {
 }
 
 /**
- * 判断是否为远程图片 URL
+ * Check if URL is a remote image
  */
 export function isRemoteImage(url: string): boolean {
-  // 以 http:// 或 https:// 开头的是远程图片
+  // URLs starting with http:// or https:// are remote images
   return /^https?:\/\//i.test(url)
 }
 
 /**
- * 判断图片是否来自指定的图床域名
- * @param url 图片 URL
- * @param domain 图床域名，例如 'aliyuncs.com'
+ * Check if image is from a specified image hosting domain
+ * @param url Image URL
+ * @param domain Image hosting domain, e.g. 'aliyuncs.com'
  */
 export function isFromImageHost(url: string, domain: string): boolean {
   try {
@@ -66,24 +66,24 @@ export function isFromImageHost(url: string, domain: string): boolean {
 }
 
 /**
- * 过滤需要迁移的图片
- * 规则：
- * 1. 必须是远程图片
- * 2. 不能已经在目标图床上
- * @param images 所有图片信息
- * @param targetDomain 目标图床域名，例如 'aliyuncs.com'
+ * Filter images that need migration
+ * Rules:
+ * 1. Must be a remote image
+ * 2. Must not already be on target host
+ * @param images All image info
+ * @param targetDomain Target image hosting domain, e.g. 'aliyuncs.com'
  */
 export function filterImagesToMigrate(
   images: ImageInfo[],
   targetDomain: string
 ): ImageInfo[] {
   return images.filter((img) => {
-    // 必须是远程图片
+    // Must be remote image
     if (!isRemoteImage(img.url)) {
       return false
     }
 
-    // 不能已经在目标图床上
+    // Must not already be on target host
     if (isFromImageHost(img.url, targetDomain)) {
       return false
     }
@@ -93,9 +93,9 @@ export function filterImagesToMigrate(
 }
 
 /**
- * 从 markdown 内容中提取所有需要迁移的图片
- * @param content markdown 内容
- * @param targetDomain 目标图床域名
+ * Extract all images that need migration from markdown content
+ * @param content Markdown content
+ * @param targetDomain Target image hosting domain
  */
 export function extractImagesToMigrate(
   content: string,
@@ -103,4 +103,112 @@ export function extractImagesToMigrate(
 ): ImageInfo[] {
   const allImages = detectImageLinks(content)
   return filterImagesToMigrate(allImages, targetDomain)
+}
+
+// Supported attachment file extensions
+const ATTACHMENT_EXTENSIONS = [
+  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+  'md', 'txt', 'rtf', 'csv', 'json', 'xml',
+  'mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac',
+  'mp4', 'mov', 'avi', 'mkv', 'webm',
+  'zip', 'rar', '7z', 'tar', 'gz',
+]
+
+/**
+ * Detect Roam attachment links in content
+ * Format: {{[[pdf]]: url}}, {{[[audio]]: url}}, {{[[video]]: url}}, etc.
+ */
+export function detectAttachmentLinks(content: string): AttachmentInfo[] {
+  const attachments: AttachmentInfo[] = []
+  const seenUrls = new Set<string>()
+
+  // Match Roam attachment format: {{[[type]]: url}}
+  const roamRegex = /\{\{\[\[(\w+)\]\]:\s*(https?:\/\/[^\s}]+)\}\}/gi
+  let match: RegExpExecArray | null
+
+  while ((match = roamRegex.exec(content)) !== null) {
+    const [originalMatch, type, url] = match
+    // Skip image types (handled separately)
+    if (['image', 'img'].includes(type.toLowerCase())) {
+      continue
+    }
+    if (!seenUrls.has(url)) {
+      seenUrls.add(url)
+      attachments.push({
+        url: url.trim(),
+        type: type.toLowerCase(),
+        originalMatch,
+      })
+    }
+  }
+
+  // Match standalone URLs (on their own line or after list marker)
+  // e.g. "- https://firebase...file.pdf?..." or indented URLs
+  const standaloneRegex = /(?:^|\n)(\s*-\s*)?(https?:\/\/[^\s\n]+)/gi
+
+  while ((match = standaloneRegex.exec(content)) !== null) {
+    const [fullMatch, listPrefix, url] = match
+
+    // Decode URL to extract extension
+    let decodedUrl: string
+    try {
+      decodedUrl = decodeURIComponent(url)
+    } catch {
+      decodedUrl = url
+    }
+
+    // Extract extension from decoded URL path (before query string)
+    const pathPart = decodedUrl.split('?')[0]
+    const extMatch = pathPart.match(/\.(\w+)$/i)
+    const ext = extMatch ? extMatch[1].toLowerCase() : null
+
+    // Only process if it's an attachment extension and not already seen
+    if (ext && ATTACHMENT_EXTENSIONS.includes(ext) && !seenUrls.has(url)) {
+      seenUrls.add(url)
+
+      // Preserve original format for replacement
+      const originalMatch = listPrefix
+        ? fullMatch.replace(/^\n/, '').trim()
+        : url.trim()
+
+      attachments.push({
+        url: url.trim(),
+        type: ext,
+        originalMatch,
+      })
+    }
+  }
+
+  return attachments
+}
+
+/**
+ * Filter attachments that need migration
+ * @param attachments All attachment info
+ * @param targetDomain Target domain, e.g. 'aliyuncs.com'
+ */
+export function filterAttachmentsToMigrate(
+  attachments: AttachmentInfo[],
+  targetDomain: string
+): AttachmentInfo[] {
+  return attachments.filter((att) => {
+    // Must not already be on target host
+    if (isFromImageHost(att.url, targetDomain)) {
+      return false
+    }
+    return true
+  })
+}
+
+/**
+ * Extract all attachments that need migration from content
+ * @param content Markdown content
+ * @param targetDomain Target domain
+ */
+export function extractAttachmentsToMigrate(
+  content: string,
+  targetDomain: string = 'aliyuncs.com'
+): AttachmentInfo[] {
+  const allAttachments = detectAttachmentLinks(content)
+  return filterAttachmentsToMigrate(allAttachments, targetDomain)
 }

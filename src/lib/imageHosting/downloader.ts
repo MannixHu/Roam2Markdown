@@ -1,21 +1,21 @@
 /**
- * 下载远程图片
- * 支持重试逻辑和超时处理
+ * Download remote images
+ * Supports retry logic and timeout handling
  */
 
-const DEFAULT_TIMEOUT = 30000 // 30秒超时
+const DEFAULT_TIMEOUT = 30000 // 30 second timeout
 const MAX_RETRIES = 3
-const RETRY_DELAY = 1000 // 重试间隔
+const RETRY_DELAY = 1000 // Retry interval
 
 /**
- * 延迟函数
+ * Delay function
  */
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 /**
- * 使用 Canvas 下载图片（绕过部分 CORS 限制）
+ * Download image via Canvas (bypasses some CORS restrictions)
  */
 function downloadViaCanvas(url: string): Promise<Blob> {
   return new Promise((resolve, reject) => {
@@ -29,7 +29,7 @@ function downloadViaCanvas(url: string): Promise<Blob> {
         canvas.height = img.naturalHeight
         const ctx = canvas.getContext('2d')
         if (!ctx) {
-          reject(new Error('Canvas 不可用'))
+          reject(new Error('Canvas not available'))
           return
         }
         ctx.drawImage(img, 0, 0)
@@ -37,16 +37,16 @@ function downloadViaCanvas(url: string): Promise<Blob> {
           if (blob) {
             resolve(blob)
           } else {
-            reject(new Error('Canvas 转换失败'))
+            reject(new Error('Canvas conversion failed'))
           }
         }, 'image/png')
       } catch (err) {
-        reject(new Error('CORS 限制: 无法读取跨域图片'))
+        reject(new Error('CORS restriction: Cannot read cross-origin image'))
       }
     }
 
     img.onerror = () => {
-      reject(new Error('图片加载失败'))
+      reject(new Error('Image load failed'))
     }
 
     img.src = url
@@ -54,10 +54,10 @@ function downloadViaCanvas(url: string): Promise<Blob> {
 }
 
 /**
- * 下载单张图片，带重试逻辑
- * @param url 图片 URL
- * @param timeout 超时时间（毫秒）
- * @param retries 重试次数
+ * Download a single image with retry logic
+ * @param url Image URL
+ * @param timeout Timeout in milliseconds
+ * @param retries Number of retries
  */
 export async function downloadImage(
   url: string,
@@ -71,7 +71,7 @@ export async function downloadImage(
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), timeout)
 
-      // 先尝试 fetch
+      // Try fetch first
       const response = await fetch(url, {
         signal: controller.signal,
         mode: 'cors',
@@ -91,10 +91,10 @@ export async function downloadImage(
     } catch (error) {
       lastError = error as Error
 
-      // 如果是 CORS 错误，尝试使用 Canvas 方式
+      // If CORS error, try Canvas approach
       if (lastError.message.includes('CORS') || lastError.name === 'TypeError') {
         try {
-          console.log(`尝试 Canvas 方式下载: ${url}`)
+          console.log(`Trying Canvas download: ${url}`)
           const blob = await downloadViaCanvas(url)
           return blob
         } catch (canvasError) {
@@ -102,37 +102,37 @@ export async function downloadImage(
         }
       }
 
-      // 如果是中止错误，转换为超时错误
+      // If abort error, convert to timeout error
       if (lastError.name === 'AbortError') {
-        lastError = new Error(`下载超时 (${timeout / 1000}秒)`)
+        lastError = new Error(`Download timeout (${timeout / 1000}s)`)
       }
 
-      // 如果还有重试机会，等待后重试
+      // If retries remaining, wait and retry
       if (attempt < retries) {
-        await delay(RETRY_DELAY * attempt) // 递增延迟
+        await delay(RETRY_DELAY * attempt) // Incremental delay
         continue
       }
     }
   }
 
-  throw lastError || new Error('下载失败')
+  throw lastError || new Error('Download failed')
 }
 
 /**
- * 图片缓存，避免重复下载
+ * Image cache to avoid duplicate downloads
  */
 const imageCache = new Map<string, Blob>()
 
 /**
- * 下载图片（带缓存）
+ * Download image with caching
  */
 export async function downloadImageWithCache(url: string): Promise<Blob> {
-  // 检查缓存
+  // Check cache
   if (imageCache.has(url)) {
     return imageCache.get(url)!
   }
 
-  // 下载并缓存
+  // Download and cache
   const blob = await downloadImage(url)
   imageCache.set(url, blob)
 
@@ -140,14 +140,14 @@ export async function downloadImageWithCache(url: string): Promise<Blob> {
 }
 
 /**
- * 清除图片缓存
+ * Clear image cache
  */
 export function clearImageCache(): void {
   imageCache.clear()
 }
 
 /**
- * 获取缓存大小
+ * Get cache size
  */
 export function getImageCacheSize(): number {
   return imageCache.size

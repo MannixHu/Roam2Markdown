@@ -1,3 +1,5 @@
+import { sanitizeContent } from './transformer'
+
 // Transform rule definition
 export interface TransformRule {
   id: string
@@ -5,6 +7,34 @@ export interface TransformRule {
   description: string
   enabled: boolean
   transform: (content: string) => string
+}
+
+// Month name mapping
+const MONTH_MAP: Record<string, string> = {
+  'january': '01',
+  'february': '02',
+  'march': '03',
+  'april': '04',
+  'may': '05',
+  'june': '06',
+  'july': '07',
+  'august': '08',
+  'september': '09',
+  'october': '10',
+  'november': '11',
+  'december': '12',
+}
+
+/**
+ * Convert Roam date link to standard format
+ * [[January 11th, 2026]] → [[2026-01-11]]
+ */
+function convertDateLink(match: string, month: string, day: string, year: string): string {
+  const monthNum = MONTH_MAP[month.toLowerCase()]
+  if (!monthNum) return match // Return original if month not found
+
+  const dayNum = day.padStart(2, '0')
+  return `[[${year}-${monthNum}-${dayNum}]]`
 }
 
 /**
@@ -190,6 +220,30 @@ export const builtInRules: TransformRule[] = [
     description: '[[folder/note]] → [[folder_note]]',
     enabled: true,
     transform: (content) => content.replace(/\[\[([^\]\/]+?)\/([^\]]+?)\]\]/g, '[[$1_$2]]'),
+  },
+  {
+    id: 'link-sanitize',
+    name: 'OSS Upload Compatibility',
+    description: '[[<<book>>]] → [[_book_]] (sanitize special chars)',
+    enabled: true,
+    transform: (content) => content.replace(
+      /\[\[([^\]]+)\]\]/g,
+      (match, linkText) => {
+        const sanitized = sanitizeContent(linkText)
+        // If unchanged, return original to avoid unnecessary modifications
+        return sanitized === linkText ? match : `[[${sanitized}]]`
+      }
+    ),
+  },
+  {
+    id: 'date-link',
+    name: 'Date Link Conversion',
+    description: '[[January 11th, 2026]] → [[2026-01-11]]',
+    enabled: true,
+    transform: (content) => content.replace(
+      /\[\[(\w+)\s+(\d{1,2})(?:st|nd|rd|th),?\s+(\d{4})\]\]/gi,
+      convertDateLink
+    ),
   },
   {
     id: 'frontmatter-clean',
