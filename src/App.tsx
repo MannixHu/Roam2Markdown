@@ -65,6 +65,7 @@ export default function App() {
   const [pendingFiles, setPendingFiles] = useState<Array<{ path: string; content: string }>>([])
   const [downloadCount, setDownloadCount] = useState(0)
   const [originalZipName, setOriginalZipName] = useState<string>('')
+  const [rawFiles, setRawFiles] = useState<Array<{ path: string; content: string }>>([]) // 上传但未转换的文件
   // 加载保存的配置
   useEffect(() => {
     loadAppConfig().then((saved) => {
@@ -111,14 +112,9 @@ export default function App() {
     )
   }
 
-  // 处理文件（支持 UploadFile 和原生 File）
-  const processFiles = async (fileList: (UploadFile | File)[]) => {
-    setProcessing(true)
-    setMigrationSession(null)
-    const filesToProcess: Array<{ path: string; content: string }> = []
-
-    // 检查图床配置
-    const shouldMigrateImages = ossConfig.enabled && validateOSSConfig(ossConfig).valid
+  // 加载文件（只读取，不转换）
+  const loadFiles = async (fileList: (UploadFile | File)[]) => {
+    const filesToLoad: Array<{ path: string; content: string }> = []
 
     for (const item of fileList) {
       const file = 'originFileObj' in item ? item.originFileObj : item
@@ -142,20 +138,41 @@ export default function App() {
             if (!path.endsWith('.md')) continue
 
             const content = await zipEntry.async('string')
-            filesToProcess.push({ path, content })
+            filesToLoad.push({ path, content })
           }
         } catch {
           message.error('failed to read zip file')
-          setProcessing(false)
           return
         }
       }
       // 处理 md 文件
       else if (name.endsWith('.md')) {
         const content = await file.text()
-        filesToProcess.push({ path: name, content })
+        filesToLoad.push({ path: name, content })
       }
     }
+
+    if (filesToLoad.length > 0) {
+      setRawFiles(filesToLoad)
+      setFiles([]) // 清空已转换的文件
+      setMigrationSession(null)
+      message.success(`${filesToLoad.length} files loaded, click "Start Conversion"`)
+    }
+  }
+
+  // 开始转换
+  const startConversion = async () => {
+    if (rawFiles.length === 0) {
+      message.warning('No files to convert')
+      return
+    }
+
+    setProcessing(true)
+    setMigrationSession(null)
+    const filesToProcess = rawFiles
+
+    // 检查图床配置
+    const shouldMigrateImages = ossConfig.enabled && validateOSSConfig(ossConfig).valid
 
     // 如果需要图床迁移，使用会话机制
     if (shouldMigrateImages && filesToProcess.length > 0) {
@@ -273,7 +290,7 @@ export default function App() {
   }
 
   const handleUpload = async (fileList: UploadFile[]) => {
-    await processFiles(fileList)
+    await loadFiles(fileList)
   }
 
   // 全局拖拽处理
@@ -300,7 +317,7 @@ export default function App() {
     )
 
     if (validFiles.length > 0) {
-      await processFiles(validFiles)
+      await loadFiles(validFiles)
     } else {
       message.warning('only .md and .zip files supported')
     }
@@ -405,6 +422,37 @@ export default function App() {
               )}
             </div>
           </div>
+        ) : rawFiles.length > 0 && files.length === 0 ? (
+          // 文件已加载，等待转换
+          <div className="w-full max-w-md text-center">
+            <div className="card p-8">
+              <div className="w-12 h-12 bg-neutral-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <FolderOpenOutlined className="text-2xl text-neutral-600" />
+              </div>
+              <p className="text-neutral-800 font-medium mb-1">
+                {rawFiles.length} files loaded
+              </p>
+              <p className="text-sm text-neutral-500 mb-6">
+                ready to convert
+              </p>
+              <div className="flex flex-col gap-3">
+                <Button
+                  type="primary"
+                  size="large"
+                  onClick={startConversion}
+                  block
+                >
+                  Start Conversion
+                </Button>
+                <button
+                  onClick={() => setRawFiles([])}
+                  className="text-sm text-neutral-500 hover:text-neutral-700 transition-colors"
+                >
+                  clear files
+                </button>
+              </div>
+            </div>
+          </div>
         ) : files.length === 0 ? (
           <div className="w-full max-w-md">
             <div className="card p-6">
@@ -427,7 +475,7 @@ export default function App() {
               </Dragger>
             </div>
             <p className="text-center text-xs text-neutral-400 mt-4">
-              auto-converts TODO, highlights, tables, links
+              configure rules before conversion
             </p>
           </div>
         ) : (
@@ -464,7 +512,7 @@ export default function App() {
                   </Button>
                 )}
                 <button
-                  onClick={() => setFiles([])}
+                  onClick={() => { setFiles([]); setRawFiles([]) }}
                   className="text-sm text-neutral-500 hover:text-neutral-700 transition-colors"
                 >
                   start over
