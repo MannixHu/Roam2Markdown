@@ -290,10 +290,22 @@ export const builtInRules: TransformRule[] = [
     },
     transform: (content, options) => {
       const separator = options?.dateSeparator || '-'
-      return content.replace(
+      const otherSeparator = separator === '-' ? '_' : '-'
+
+      // 1. Convert Roam format: [[January 11th, 2026]] → [[2026-01-11]]
+      let result = content.replace(
         /\[\[(\w+)\s+(\d{1,2})(?:st|nd|rd|th),?\s+(\d{4})\]\]/gi,
         createDateLinkConverter(separator)
       )
+
+      // 2. Convert between date formats: [[2026_01_11]] ↔ [[2026-01-11]]
+      const datePattern = new RegExp(
+        `\\[\\[(\\d{4})${otherSeparator === '-' ? '-' : '_'}(\\d{2})${otherSeparator === '-' ? '-' : '_'}(\\d{2})\\]\\]`,
+        'g'
+      )
+      result = result.replace(datePattern, `[[$1${separator}$2${separator}$3]]`)
+
+      return result
     },
   },
   {
