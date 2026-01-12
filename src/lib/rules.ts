@@ -274,7 +274,7 @@ export const builtInRules: TransformRule[] = [
   {
     id: 'link-sanitize',
     name: 'OSS Upload Compatibility',
-    description: '[[<<book>>]] → [[_book_]] (sanitize special chars)',
+    description: '[[<<book>>]] → [[-book-]] (sanitize special chars)',
     enabled: true,
     transform: (content) => content.replace(
       /\[\[([^\]]+)\]\]/g,

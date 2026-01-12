@@ -1,4 +1,4 @@
-import { TransformRule, applyRules, getDateSeparator, DateSeparator } from './rules'
+import { TransformRule, applyRules, getDateSeparator, DateSeparator, DateFormat } from './rules'
 
 export interface FileItem {
   originalPath: string
@@ -48,11 +48,84 @@ function parseRoamDateFileName(fileName: string): { year: number; month: number;
 }
 
 /**
- * Convert Roam date filename to standard format
- * "February 1st, 2023.md" → "2023-02-01.md" or "2023_02_01.md"
+ * Parse dash date format filename
+ * e.g. "2023-02-01.md" → { year: 2023, month: 2, day: 1 }
  */
-export function convertDateFileName(fileName: string, separator: DateSeparator = '-'): string | null {
-  const parsed = parseRoamDateFileName(fileName)
+function parseDashDateFileName(fileName: string): { year: number; month: number; day: number } | null {
+  const match = fileName.match(/^(\d{4})-(\d{2})-(\d{2})\.md$/i)
+  if (!match) return null
+
+  const [, yearStr, monthStr, dayStr] = match
+  return {
+    year: parseInt(yearStr, 10),
+    month: parseInt(monthStr, 10),
+    day: parseInt(dayStr, 10),
+  }
+}
+
+/**
+ * Parse underscore date format filename
+ * e.g. "2023_02_01.md" → { year: 2023, month: 2, day: 1 }
+ */
+function parseUnderscoreDateFileName(fileName: string): { year: number; month: number; day: number } | null {
+  const match = fileName.match(/^(\d{4})_(\d{2})_(\d{2})\.md$/i)
+  if (!match) return null
+
+  const [, yearStr, monthStr, dayStr] = match
+  return {
+    year: parseInt(yearStr, 10),
+    month: parseInt(monthStr, 10),
+    day: parseInt(dayStr, 10),
+  }
+}
+
+/**
+ * Parse date filename based on source format
+ */
+function parseDateFileName(fileName: string, sourceFormat: DateFormat): { year: number; month: number; day: number } | null {
+  switch (sourceFormat) {
+    case 'roam':
+      return parseRoamDateFileName(fileName)
+    case 'dash':
+      return parseDashDateFileName(fileName)
+    case 'underscore':
+      return parseUnderscoreDateFileName(fileName)
+    default:
+      return null
+  }
+}
+
+/**
+ * Detect date format of filename (try all formats)
+ */
+function detectDateFormat(fileName: string): DateFormat | null {
+  if (parseRoamDateFileName(fileName)) return 'roam'
+  if (parseDashDateFileName(fileName)) return 'dash'
+  if (parseUnderscoreDateFileName(fileName)) return 'underscore'
+  return null
+}
+
+/**
+ * Convert date filename to target format
+ * Supports: roam, dash, underscore formats
+ */
+export function convertDateFileName(
+  fileName: string,
+  separator: DateSeparator = '-',
+  sourceFormat?: DateFormat
+): string | null {
+  // If source format specified, use it; otherwise try to detect
+  let parsed: { year: number; month: number; day: number } | null = null
+
+  if (sourceFormat) {
+    parsed = parseDateFileName(fileName, sourceFormat)
+  } else {
+    // Try all formats
+    parsed = parseRoamDateFileName(fileName)
+      || parseDashDateFileName(fileName)
+      || parseUnderscoreDateFileName(fileName)
+  }
+
   if (!parsed) return null
 
   const { year, month, day } = parsed
@@ -63,10 +136,13 @@ export function convertDateFileName(fileName: string, separator: DateSeparator =
 }
 
 /**
- * Check if file is a journal (Roam date format)
+ * Check if file is a journal (any date format)
  */
-export function isJournalFile(fileName: string): boolean {
-  return parseRoamDateFileName(fileName) !== null
+export function isJournalFile(fileName: string, sourceFormat?: DateFormat): boolean {
+  if (sourceFormat) {
+    return parseDateFileName(fileName, sourceFormat) !== null
+  }
+  return detectDateFormat(fileName) !== null
 }
 
 /**
@@ -75,15 +151,13 @@ export function isJournalFile(fileName: string): boolean {
  */
 export function sanitizeContent(text: string): string {
   return text
-    // Book title brackets first: << >> 《》 → single underscore each
-    .replace(/<<|>>/g, '_')
-    .replace(/《|》/g, '_')
-    // Windows forbidden: < > : " / \ | ? *
-    .replace(/[<>:"/\\|?*]/g, '_')
-    // Arrows and special symbols: → ← ↑ ↓ ➜ etc
+    // Book title brackets: << >> 《》 → hyphen
+    .replace(/<<|>>/g, '-')
+    .replace(/《|》/g, '-')
+    // Arrows → hyphen
     .replace(/[→←↑↓↔↕➜➔➡⬅⬆⬇]/g, '-')
-    // Exclamation marks (can cause issues in some shells)
-    .replace(/!+/g, '')
+    // Other special chars incompatible with OSS/URL → delete
+    .replace(/[<>:"/\\|?*!#+=\[\]{}'^$()]/g, '')
     // Multiple spaces → single space
     .replace(/\s+/g, ' ')
     // Trim leading/trailing spaces only
@@ -149,30 +223,32 @@ export function processFile(
   const shouldSanitize = rules.find(r => r.id === 'link-sanitize')?.enabled ?? true
   // Check if journal folder rule is enabled
   const useJournalFolder = rules.find(r => r.id === 'journal-folder')?.enabled ?? true
-  // Get date separator from rules
+  // Get date separator and source format from rules
   const dateSeparator = getDateSeparator(rules)
+  const dateRule = rules.find(r => r.id === 'date-link')
+  const dateSourceFormat = (dateRule?.options?.dateSourceFormat || 'roam') as DateFormat
 
   // Check if file is already in pages/ or journals/ folder
   const isInPages = path.startsWith('pages/') || path.startsWith('./pages/')
   const isInJournals = path.startsWith('journals/') || path.startsWith('./journals/')
 
-  // Check if journal file and convert filename
-  const isJournal = isJournalFile(originalName)
+  // Check if journal file and convert filename (use source format for detection)
+  const isJournal = isJournalFile(originalName, dateSourceFormat)
   let newName: string
   let newPath: string
 
   if (isInPages || isInJournals) {
     // Already in pages/ or journals/ - keep original structure, just sanitize filename if needed
     newName = shouldSanitize ? sanitizeFileName(originalName) : originalName
-    // Convert date format for journal files
+    // Convert date format for journal files (pass source format)
     if (isJournal) {
-      const dateConverted = convertDateFileName(originalName, dateSeparator)
+      const dateConverted = convertDateFileName(originalName, dateSeparator, dateSourceFormat)
       newName = dateConverted || newName
     }
     newPath = isInJournals ? `journals/${newName}` : `pages/${newName}`
   } else if (isJournal) {
-    // Journal file: convert date format
-    const dateConverted = convertDateFileName(originalName, dateSeparator)
+    // Journal file: convert date format (pass source format)
+    const dateConverted = convertDateFileName(originalName, dateSeparator, dateSourceFormat)
     newName = dateConverted || (shouldSanitize ? sanitizeFileName(originalName) : originalName)
     // Put in journals folder if rule is enabled, otherwise in pages folder
     newPath = useJournalFolder ? `journals/${newName}` : `pages/${newName}`
