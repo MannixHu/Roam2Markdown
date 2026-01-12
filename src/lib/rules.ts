@@ -11,8 +11,10 @@ export interface TransformRule {
   enabled: boolean
   options?: {
     dateSeparator?: DateSeparator
-    todoFormat?: string      // Custom TODO format, e.g. "[ ]", "- [ ]"
-    doneFormat?: string      // Custom DONE format, e.g. "[x]", "- [x]"
+    todoSource?: string      // Source pattern, e.g. "{{[[TODO]]}}", "TODO"
+    todoFormat?: string      // Target format, e.g. "[ ]", "- [ ]"
+    doneSource?: string      // Source pattern, e.g. "{{[[DONE]]}}", "DONE"
+    doneFormat?: string      // Target format, e.g. "[x]", "- [x]"
   }
   transform: (content: string, options?: TransformRule['options']) => string
 }
@@ -222,11 +224,15 @@ export const builtInRules: TransformRule[] = [
     description: '{{[[TODO]]}} → [ ]',
     enabled: true,
     options: {
+      todoSource: '{{[[TODO]]}}',
       todoFormat: '[ ]',
     },
     transform: (content, options) => {
+      const source = options?.todoSource || '{{[[TODO]]}}'
       const format = options?.todoFormat || '[ ]'
-      return content.replace(/\{\{\[\[TODO\]\]\}\}/g, format)
+      // Escape special regex characters in source
+      const escaped = source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      return content.replace(new RegExp(escaped, 'g'), format)
     },
   },
   {
@@ -235,11 +241,15 @@ export const builtInRules: TransformRule[] = [
     description: '{{[[DONE]]}} → [x]',
     enabled: true,
     options: {
+      doneSource: '{{[[DONE]]}}',
       doneFormat: '[x]',
     },
     transform: (content, options) => {
+      const source = options?.doneSource || '{{[[DONE]]}}'
       const format = options?.doneFormat || '[x]'
-      return content.replace(/\{\{\[\[DONE\]\]\}\}/g, format)
+      // Escape special regex characters in source
+      const escaped = source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      return content.replace(new RegExp(escaped, 'g'), format)
     },
   },
   {

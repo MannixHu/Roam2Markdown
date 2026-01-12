@@ -599,9 +599,9 @@ export default function App() {
                           </div>
                           <code className="text-xs text-neutral-400">
                             {rule.id === 'todo'
-                              ? `{{[[TODO]]}} → ${rule.options?.todoFormat || '[ ]'}`
+                              ? `${rule.options?.todoSource || '{{[[TODO]]}}'} → ${rule.options?.todoFormat || '[ ]'}`
                               : rule.id === 'done'
-                              ? `{{[[DONE]]}} → ${rule.options?.doneFormat || '[x]'}`
+                              ? `${rule.options?.doneSource || '{{[[DONE]]}}'} → ${rule.options?.doneFormat || '[x]'}`
                               : rule.id === 'date-link'
                               ? `[[January 11th, 2026]] → [[2026${rule.options?.dateSeparator || '-'}01${rule.options?.dateSeparator || '-'}11]]`
                               : rule.description}
@@ -615,11 +615,21 @@ export default function App() {
                       {/* TODO format option */}
                       {rule.id === 'todo' && rule.enabled && (
                         <div
-                          className="mt-2 pt-2 border-t border-neutral-100"
+                          className="mt-2 pt-2 border-t border-neutral-100 space-y-2"
                           onClick={(e) => e.stopPropagation()}
                         >
                           <div className="flex items-center gap-3">
-                            <span className="text-xs text-neutral-500 whitespace-nowrap">Format:</span>
+                            <span className="text-xs text-neutral-500 whitespace-nowrap w-12">Source:</span>
+                            <Input
+                              size="small"
+                              value={rule.options?.todoSource || '{{[[TODO]]}}'}
+                              onChange={(e) => updateRuleOptions('todo', { todoSource: e.target.value })}
+                              className="flex-1"
+                              placeholder="{{[[TODO]]}}"
+                            />
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs text-neutral-500 whitespace-nowrap w-12">Target:</span>
                             <Input
                               size="small"
                               value={rule.options?.todoFormat || '[ ]'}
@@ -633,11 +643,21 @@ export default function App() {
                       {/* DONE format option */}
                       {rule.id === 'done' && rule.enabled && (
                         <div
-                          className="mt-2 pt-2 border-t border-neutral-100"
+                          className="mt-2 pt-2 border-t border-neutral-100 space-y-2"
                           onClick={(e) => e.stopPropagation()}
                         >
                           <div className="flex items-center gap-3">
-                            <span className="text-xs text-neutral-500 whitespace-nowrap">Format:</span>
+                            <span className="text-xs text-neutral-500 whitespace-nowrap w-12">Source:</span>
+                            <Input
+                              size="small"
+                              value={rule.options?.doneSource || '{{[[DONE]]}}'}
+                              onChange={(e) => updateRuleOptions('done', { doneSource: e.target.value })}
+                              className="flex-1"
+                              placeholder="{{[[DONE]]}}"
+                            />
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs text-neutral-500 whitespace-nowrap w-12">Target:</span>
                             <Input
                               size="small"
                               value={rule.options?.doneFormat || '[x]'}
