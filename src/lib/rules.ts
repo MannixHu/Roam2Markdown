@@ -2,6 +2,8 @@ import { sanitizeContent } from './transformer'
 
 // Date separator options
 export type DateSeparator = '-' | '_'
+// Date format options
+export type DateFormat = 'roam' | 'dash' | 'underscore'  // roam: January 11th, 2026 | dash: 2026-01-11 | underscore: 2026_01_11
 
 // Transform rule definition
 export interface TransformRule {
@@ -11,6 +13,8 @@ export interface TransformRule {
   enabled: boolean
   options?: {
     dateSeparator?: DateSeparator
+    dateSourceFormat?: DateFormat   // Source date format
+    dateTargetFormat?: DateFormat   // Target date format (dash or underscore only)
     todoSource?: string      // Source pattern, e.g. "{{[[TODO]]}}", "TODO"
     todoFormat?: string      // Target format, e.g. "[ ]", "- [ ]"
     doneSource?: string      // Source pattern, e.g. "{{[[DONE]]}}", "DONE"
@@ -19,10 +23,11 @@ export interface TransformRule {
   transform: (content: string, options?: TransformRule['options']) => string
 }
 
-// Get date separator from rules
+// Get date separator from rules (based on target format)
 export function getDateSeparator(rules: TransformRule[]): DateSeparator {
   const dateRule = rules.find(r => r.id === 'date-link')
-  return dateRule?.options?.dateSeparator || '-'
+  const targetFormat = dateRule?.options?.dateTargetFormat || 'dash'
+  return targetFormat === 'underscore' ? '_' : '-'
 }
 
 // Month name mapping
@@ -286,24 +291,36 @@ export const builtInRules: TransformRule[] = [
     description: '[[January 11th, 2026]] → [[2026-01-11]]',
     enabled: true,
     options: {
-      dateSeparator: '-' as DateSeparator,
+      dateSourceFormat: 'roam' as DateFormat,
+      dateTargetFormat: 'dash' as DateFormat,
     },
     transform: (content, options) => {
-      const separator = options?.dateSeparator || '-'
-      const otherSeparator = separator === '-' ? '_' : '-'
+      const sourceFormat = options?.dateSourceFormat || 'roam'
+      const targetFormat = options?.dateTargetFormat || 'dash'
+      const targetSeparator = targetFormat === 'underscore' ? '_' : '-'
 
-      // 1. Convert Roam format: [[January 11th, 2026]] → [[2026-01-11]]
-      let result = content.replace(
-        /\[\[(\w+)\s+(\d{1,2})(?:st|nd|rd|th),?\s+(\d{4})\]\]/gi,
-        createDateLinkConverter(separator)
-      )
+      let result = content
 
-      // 2. Convert between date formats: [[2026_01_11]] ↔ [[2026-01-11]]
-      const datePattern = new RegExp(
-        `\\[\\[(\\d{4})${otherSeparator === '-' ? '-' : '_'}(\\d{2})${otherSeparator === '-' ? '-' : '_'}(\\d{2})\\]\\]`,
-        'g'
-      )
-      result = result.replace(datePattern, `[[$1${separator}$2${separator}$3]]`)
+      // Convert based on source format
+      if (sourceFormat === 'roam') {
+        // Roam format: [[January 11th, 2026]] → target
+        result = result.replace(
+          /\[\[(\w+)\s+(\d{1,2})(?:st|nd|rd|th),?\s+(\d{4})\]\]/gi,
+          createDateLinkConverter(targetSeparator)
+        )
+      } else if (sourceFormat === 'dash') {
+        // Dash format: [[2026-01-11]] → target
+        result = result.replace(
+          /\[\[(\d{4})-(\d{2})-(\d{2})\]\]/g,
+          `[[$1${targetSeparator}$2${targetSeparator}$3]]`
+        )
+      } else if (sourceFormat === 'underscore') {
+        // Underscore format: [[2026_01_11]] → target
+        result = result.replace(
+          /\[\[(\d{4})_(\d{2})_(\d{2})\]\]/g,
+          `[[$1${targetSeparator}$2${targetSeparator}$3]]`
+        )
+      }
 
       return result
     },

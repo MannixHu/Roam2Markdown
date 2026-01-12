@@ -10,7 +10,7 @@ import {
   Tabs,
   Drawer,
   Table,
-  Radio,
+  Select,
 } from 'antd'
 import {
   FolderOpenOutlined,
@@ -22,7 +22,7 @@ import {
 import type { UploadFile } from 'antd'
 import JSZip from 'jszip'
 import { saveAs } from 'file-saver'
-import { builtInRules, TransformRule, DateSeparator } from './lib/rules'
+import { builtInRules, TransformRule, DateFormat } from './lib/rules'
 import { processFile, FileItem } from './lib/transformer'
 import PreviewModal from './components/PreviewModal'
 import ImageHostingConfig from './components/ImageHostingConfig'
@@ -651,7 +651,13 @@ export default function App() {
                               : rule.id === 'done'
                               ? `${rule.options?.doneSource || '{{[[DONE]]}}'} → ${rule.options?.doneFormat || '[x]'}`
                               : rule.id === 'date-link'
-                              ? `[[January 11th, 2026]] → [[2026${rule.options?.dateSeparator || '-'}01${rule.options?.dateSeparator || '-'}11]]`
+                              ? `[[${
+                                  rule.options?.dateSourceFormat === 'dash' ? '2026-01-11'
+                                  : rule.options?.dateSourceFormat === 'underscore' ? '2026_01_11'
+                                  : 'January 11th, 2026'
+                                }]] → [[${
+                                  rule.options?.dateTargetFormat === 'underscore' ? '2026_01_11' : '2026-01-11'
+                                }]]`
                               : rule.description}
                           </code>
                         </div>
@@ -716,24 +722,38 @@ export default function App() {
                           </div>
                         </div>
                       )}
-                      {/* Date separator option for date-link rule */}
+                      {/* Date format options for date-link rule */}
                       {rule.id === 'date-link' && rule.enabled && (
                         <div
-                          className="mt-2 pt-2 border-t border-neutral-100"
+                          className="mt-2 pt-2 border-t border-neutral-100 space-y-2"
                           onClick={(e) => e.stopPropagation()}
                         >
                           <div className="flex items-center gap-3">
-                            <span className="text-xs text-neutral-500">Separator:</span>
-                            <Radio.Group
+                            <span className="text-xs text-neutral-500 whitespace-nowrap w-12">Source:</span>
+                            <Select
                               size="small"
-                              value={rule.options?.dateSeparator || '-'}
-                              onChange={(e) => {
-                                updateRuleOptions('date-link', { dateSeparator: e.target.value as DateSeparator })
-                              }}
-                            >
-                              <Radio.Button value="-">2026-01-11</Radio.Button>
-                              <Radio.Button value="_">2026_01_11</Radio.Button>
-                            </Radio.Group>
+                              value={rule.options?.dateSourceFormat || 'roam'}
+                              onChange={(value) => updateRuleOptions('date-link', { dateSourceFormat: value as DateFormat })}
+                              className="flex-1"
+                              options={[
+                                { value: 'roam', label: 'January 11th, 2026' },
+                                { value: 'dash', label: '2026-01-11' },
+                                { value: 'underscore', label: '2026_01_11' },
+                              ]}
+                            />
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs text-neutral-500 whitespace-nowrap w-12">Target:</span>
+                            <Select
+                              size="small"
+                              value={rule.options?.dateTargetFormat || 'dash'}
+                              onChange={(value) => updateRuleOptions('date-link', { dateTargetFormat: value as DateFormat })}
+                              className="flex-1"
+                              options={[
+                                { value: 'dash', label: '2026-01-11' },
+                                { value: 'underscore', label: '2026_01_11' },
+                              ]}
+                            />
                           </div>
                         </div>
                       )}
