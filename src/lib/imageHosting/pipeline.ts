@@ -233,7 +233,7 @@ export async function executeMigrationSession(
   config: OSSConfig,
   controller: MigrationController,
   onProgress?: (session: MigrationSession) => void,
-  concurrency: number = 20 // Number of concurrent uploads
+  concurrency: number = 100 // Number of concurrent uploads
 ): Promise<MigrationSession> {
   // Validate config
   const validation = validateOSSConfig(config)
@@ -510,8 +510,8 @@ export async function migrateFileImages(
     failed: 0,
   }
 
-  // Process images concurrently (batch of 20)
-  const concurrency = 20
+  // Process images concurrently (batch of 100)
+  const concurrency = 100
   for (let i = 0; i < imagesToMigrate.length; i += concurrency) {
     const batch = imagesToMigrate.slice(i, i + concurrency)
 

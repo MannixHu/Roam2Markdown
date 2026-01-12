@@ -11,6 +11,7 @@ export interface AppConfig {
   ossConfig: OSSConfig
   customRules: TransformRule[]
   disabledRuleIds: string[] // IDs of disabled built-in rules
+  ruleOptions?: Record<string, TransformRule['options']> // Options for built-in rules
 }
 
 let dbInstance: IDBDatabase | null = null

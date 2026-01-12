@@ -10,6 +10,7 @@ import {
   Tabs,
   Drawer,
   Table,
+  Radio,
 } from 'antd'
 import {
   FolderOpenOutlined,
@@ -21,7 +22,7 @@ import {
 import type { UploadFile } from 'antd'
 import JSZip from 'jszip'
 import { saveAs } from 'file-saver'
-import { builtInRules, TransformRule } from './lib/rules'
+import { builtInRules, TransformRule, DateSeparator } from './lib/rules'
 import { processFile, FileItem } from './lib/transformer'
 import PreviewModal from './components/PreviewModal'
 import ImageHostingConfig from './components/ImageHostingConfig'
@@ -70,13 +71,12 @@ export default function App() {
       if (saved) {
         setOssConfig(saved.ossConfig)
         setCustomRules(saved.customRules || [])
-        // 恢复内置规则的启用状态
-        if (saved.disabledRuleIds) {
-          setRules(prev => prev.map(r => ({
-            ...r,
-            enabled: !saved.disabledRuleIds.includes(r.id)
-          })))
-        }
+        // 恢复内置规则的启用状态和选项
+        setRules(prev => prev.map(r => ({
+          ...r,
+          enabled: saved.disabledRuleIds ? !saved.disabledRuleIds.includes(r.id) : r.enabled,
+          options: saved.ruleOptions?.[r.id] || r.options,
+        })))
       }
       setConfigLoaded(true)
     })
@@ -86,7 +86,11 @@ export default function App() {
   useEffect(() => {
     if (!configLoaded) return
     const disabledRuleIds = rules.filter(r => !r.enabled).map(r => r.id)
-    saveAppConfig({ ossConfig, customRules, disabledRuleIds })
+    const ruleOptions: Record<string, TransformRule['options']> = {}
+    rules.forEach(r => {
+      if (r.options) ruleOptions[r.id] = r.options
+    })
+    saveAppConfig({ ossConfig, customRules, disabledRuleIds, ruleOptions })
   }, [ossConfig, customRules, rules, configLoaded])
 
   const allRules = [...rules, ...customRules]
@@ -98,6 +102,12 @@ export default function App() {
     )
     setCustomRules((prev) =>
       prev.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r))
+    )
+  }
+
+  const updateRuleOptions = (id: string, options: TransformRule['options']) => {
+    setRules((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, options: { ...r.options, ...options } } : r))
     )
   }
 
@@ -577,21 +587,88 @@ export default function App() {
                   {rules.map((rule) => (
                     <div
                       key={rule.id}
-                      className="rule-card flex items-center justify-between p-3 bg-white border border-neutral-200 rounded"
-                      onClick={() => toggleRule(rule.id)}
+                      className="rule-card p-3 bg-white border border-neutral-200 rounded"
                     >
-                      <div className="flex-1 min-w-0 pr-3">
-                        <div className="text-sm font-medium text-neutral-700 mb-0.5">
-                          {rule.name}
+                      <div
+                        className="flex items-center justify-between cursor-pointer"
+                        onClick={() => toggleRule(rule.id)}
+                      >
+                        <div className="flex-1 min-w-0 pr-3">
+                          <div className="text-sm font-medium text-neutral-700 mb-0.5">
+                            {rule.name}
+                          </div>
+                          <code className="text-xs text-neutral-400">
+                            {rule.id === 'todo'
+                              ? `{{[[TODO]]}} → ${rule.options?.todoFormat || '[ ]'}`
+                              : rule.id === 'done'
+                              ? `{{[[DONE]]}} → ${rule.options?.doneFormat || '[x]'}`
+                              : rule.id === 'date-link'
+                              ? `[[January 11th, 2026]] → [[2026${rule.options?.dateSeparator || '-'}01${rule.options?.dateSeparator || '-'}11]]`
+                              : rule.description}
+                          </code>
                         </div>
-                        <code className="text-xs text-neutral-400">
-                          {rule.description}
-                        </code>
+                        <Switch
+                          size="small"
+                          checked={rule.enabled}
+                        />
                       </div>
-                      <Switch
-                        size="small"
-                        checked={rule.enabled}
-                      />
+                      {/* TODO format option */}
+                      {rule.id === 'todo' && rule.enabled && (
+                        <div
+                          className="mt-2 pt-2 border-t border-neutral-100"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs text-neutral-500 whitespace-nowrap">Format:</span>
+                            <Input
+                              size="small"
+                              value={rule.options?.todoFormat || '[ ]'}
+                              onChange={(e) => updateRuleOptions('todo', { todoFormat: e.target.value })}
+                              className="flex-1"
+                              placeholder="[ ]"
+                            />
+                          </div>
+                        </div>
+                      )}
+                      {/* DONE format option */}
+                      {rule.id === 'done' && rule.enabled && (
+                        <div
+                          className="mt-2 pt-2 border-t border-neutral-100"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs text-neutral-500 whitespace-nowrap">Format:</span>
+                            <Input
+                              size="small"
+                              value={rule.options?.doneFormat || '[x]'}
+                              onChange={(e) => updateRuleOptions('done', { doneFormat: e.target.value })}
+                              className="flex-1"
+                              placeholder="[x]"
+                            />
+                          </div>
+                        </div>
+                      )}
+                      {/* Date separator option for date-link rule */}
+                      {rule.id === 'date-link' && rule.enabled && (
+                        <div
+                          className="mt-2 pt-2 border-t border-neutral-100"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs text-neutral-500">Separator:</span>
+                            <Radio.Group
+                              size="small"
+                              value={rule.options?.dateSeparator || '-'}
+                              onChange={(e) => {
+                                updateRuleOptions('date-link', { dateSeparator: e.target.value as DateSeparator })
+                              }}
+                            >
+                              <Radio.Button value="-">2026-01-11</Radio.Button>
+                              <Radio.Button value="_">2026_01_11</Radio.Button>
+                            </Radio.Group>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

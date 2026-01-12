@@ -1,12 +1,26 @@
 import { sanitizeContent } from './transformer'
 
+// Date separator options
+export type DateSeparator = '-' | '_'
+
 // Transform rule definition
 export interface TransformRule {
   id: string
   name: string
   description: string
   enabled: boolean
-  transform: (content: string) => string
+  options?: {
+    dateSeparator?: DateSeparator
+    todoFormat?: string      // Custom TODO format, e.g. "[ ]", "- [ ]"
+    doneFormat?: string      // Custom DONE format, e.g. "[x]", "- [x]"
+  }
+  transform: (content: string, options?: TransformRule['options']) => string
+}
+
+// Get date separator from rules
+export function getDateSeparator(rules: TransformRule[]): DateSeparator {
+  const dateRule = rules.find(r => r.id === 'date-link')
+  return dateRule?.options?.dateSeparator || '-'
 }
 
 // Month name mapping
@@ -27,14 +41,23 @@ const MONTH_MAP: Record<string, string> = {
 
 /**
  * Convert Roam date link to standard format
- * [[January 11th, 2026]] → [[2026-01-11]]
+ * [[January 11th, 2026]] → [[2026-01-11]] or [[2026_01_11]]
  */
-function convertDateLink(match: string, month: string, day: string, year: string): string {
+function convertDateLink(match: string, month: string, day: string, year: string, separator: DateSeparator = '-'): string {
   const monthNum = MONTH_MAP[month.toLowerCase()]
   if (!monthNum) return match // Return original if month not found
 
   const dayNum = day.padStart(2, '0')
-  return `[[${year}-${monthNum}-${dayNum}]]`
+  return `[[${year}${separator}${monthNum}${separator}${dayNum}]]`
+}
+
+/**
+ * Create date link converter with specified separator
+ */
+function createDateLinkConverter(separator: DateSeparator) {
+  return (match: string, month: string, day: string, year: string) => {
+    return convertDateLink(match, month, day, year, separator)
+  }
 }
 
 /**
@@ -198,14 +221,26 @@ export const builtInRules: TransformRule[] = [
     name: 'TODO Conversion',
     description: '{{[[TODO]]}} → [ ]',
     enabled: true,
-    transform: (content) => content.replace(/\{\{\[\[TODO\]\]\}\}/g, '[ ]'),
+    options: {
+      todoFormat: '[ ]',
+    },
+    transform: (content, options) => {
+      const format = options?.todoFormat || '[ ]'
+      return content.replace(/\{\{\[\[TODO\]\]\}\}/g, format)
+    },
   },
   {
     id: 'done',
     name: 'DONE Conversion',
     description: '{{[[DONE]]}} → [x]',
     enabled: true,
-    transform: (content) => content.replace(/\{\{\[\[DONE\]\]\}\}/g, '[x]'),
+    options: {
+      doneFormat: '[x]',
+    },
+    transform: (content, options) => {
+      const format = options?.doneFormat || '[x]'
+      return content.replace(/\{\{\[\[DONE\]\]\}\}/g, format)
+    },
   },
   {
     id: 'highlight',
@@ -240,10 +275,23 @@ export const builtInRules: TransformRule[] = [
     name: 'Date Link Conversion',
     description: '[[January 11th, 2026]] → [[2026-01-11]]',
     enabled: true,
-    transform: (content) => content.replace(
-      /\[\[(\w+)\s+(\d{1,2})(?:st|nd|rd|th),?\s+(\d{4})\]\]/gi,
-      convertDateLink
-    ),
+    options: {
+      dateSeparator: '-' as DateSeparator,
+    },
+    transform: (content, options) => {
+      const separator = options?.dateSeparator || '-'
+      return content.replace(
+        /\[\[(\w+)\s+(\d{1,2})(?:st|nd|rd|th),?\s+(\d{4})\]\]/gi,
+        createDateLinkConverter(separator)
+      )
+    },
+  },
+  {
+    id: 'journal-folder',
+    name: 'Journal Folder',
+    description: 'Move journal files to journals/ folder',
+    enabled: true,
+    transform: (content) => content, // No content transform, only affects file path
   },
   {
     id: 'frontmatter-clean',
@@ -393,5 +441,5 @@ export const builtInRules: TransformRule[] = [
 export function applyRules(content: string, rules: TransformRule[]): string {
   return rules
     .filter((r) => r.enabled)
-    .reduce((text, rule) => rule.transform(text), content)
+    .reduce((text, rule) => rule.transform(text, rule.options), content)
 }
