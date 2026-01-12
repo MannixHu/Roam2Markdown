@@ -9,6 +9,17 @@ export interface OSSConfig {
   migrateAttachments?: boolean // Also migrate attachments (pdf, audio, etc.)
 }
 
+/**
+ * Get target domain from OSS config
+ * e.g. bucket=mannix-imgurl, region=oss-cn-beijing → mannix-imgurl.oss-cn-beijing.aliyuncs.com
+ */
+export function getTargetDomain(config: OSSConfig): string {
+  if (config.bucket && config.region) {
+    return `${config.bucket}.${config.region}.aliyuncs.com`
+  }
+  return 'aliyuncs.com' // fallback
+}
+
 // OSS region options
 export const OSS_REGIONS = [
   { label: 'China East 1 (Hangzhou)', value: 'oss-cn-hangzhou' },

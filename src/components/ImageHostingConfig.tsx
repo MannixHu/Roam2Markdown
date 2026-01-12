@@ -1,5 +1,5 @@
 import { Form, Input, Switch } from 'antd'
-import { OSSConfig } from '../lib/imageHosting/types'
+import { OSSConfig, getTargetDomain } from '../lib/imageHosting/types'
 
 interface ImageHostingConfigProps {
   config: OSSConfig
@@ -117,7 +117,7 @@ export default function ImageHostingConfig({ config, onChange }: ImageHostingCon
 
           <div className="pt-2 mt-2 border-t border-neutral-100">
             <div className="text-xs text-neutral-400 space-y-2">
-              <p>Images from non-aliyuncs.com domains will be downloaded and uploaded to OSS</p>
+              <p>Images not from <code className="bg-neutral-100 px-1 text-neutral-500">{getTargetDomain(config)}</code> will be migrated</p>
               <details className="cursor-pointer">
                 <summary className="text-orange-600 hover:text-orange-700">First time? Configure OSS CORS settings</summary>
                 <div className="mt-2 ml-2 p-2 bg-neutral-50 rounded text-neutral-600">

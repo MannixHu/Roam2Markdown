@@ -1,4 +1,4 @@
-import { OSSConfig, MigrationProgress, MigrationSession, FileMigrationState, ImageMigrationState } from './types'
+import { OSSConfig, MigrationProgress, MigrationSession, FileMigrationState, ImageMigrationState, getTargetDomain } from './types'
 import { extractImagesToMigrate, extractAttachmentsToMigrate } from './detector'
 import { createOSSClient, generateFileName, uploadToOSS, validateOSSConfig } from './ossClient'
 import { downloadImageWithCache, clearImageCache } from './downloader'
@@ -138,19 +138,20 @@ function generateSessionId(): string {
 /**
  * Create new migration session
  * @param files Files to process
- * @param includeAttachments Whether to include attachments (pdf, audio, etc.)
+ * @param config OSS config (used to determine target domain)
  */
 export function createMigrationSession(
   files: Array<{ path: string; content: string }>,
-  includeAttachments: boolean = false
+  config: OSSConfig
 ): MigrationSession {
   const now = Date.now()
   let totalImages = 0
+  const targetDomain = getTargetDomain(config)
 
   const filesState: Record<string, FileMigrationState> = {}
 
   for (const file of files) {
-    const images = extractImagesToMigrate(file.content, 'aliyuncs.com')
+    const images = extractImagesToMigrate(file.content, targetDomain)
     const imagesState: Record<string, ImageMigrationState> = {}
 
     // Add images
@@ -160,8 +161,8 @@ export function createMigrationSession(
     totalImages += images.length
 
     // Add attachments if enabled
-    if (includeAttachments) {
-      const attachments = extractAttachmentsToMigrate(file.content, 'aliyuncs.com')
+    if (config.migrateAttachments) {
+      const attachments = extractAttachmentsToMigrate(file.content, targetDomain)
       for (const att of attachments) {
         imagesState[att.url] = {
           status: 'pending',
@@ -385,8 +386,8 @@ export async function startMigration(
     console.log(`Cleared old session: ${pendingSession.id}`)
   }
 
-  // Create new session (include attachments if enabled)
-  const session = createMigrationSession(files, config.migrateAttachments ?? false)
+  // Create new session with config (determines target domain and attachment migration)
+  const session = createMigrationSession(files, config)
   await saveMigrationSession(session)
   console.log(`Created new migration session: ${session.id}, items: ${session.totalImages}`)
 
@@ -483,8 +484,9 @@ export async function migrateFileImages(
     }
   }
 
-  // Extract images to migrate
-  const imagesToMigrate = extractImagesToMigrate(content, 'aliyuncs.com')
+  // Extract images to migrate (use target domain from config)
+  const targetDomain = getTargetDomain(config)
+  const imagesToMigrate = extractImagesToMigrate(content, targetDomain)
 
   if (imagesToMigrate.length === 0) {
     return {
